@@ -122,6 +122,12 @@ class AutoPostSettings {
     required this.memoryVerses,
   });
 
+  factory AutoPostSettings.defaults() => const AutoPostSettings(
+        badges: true,
+        streaks: true,
+        memoryVerses: true,
+      );
+
   factory AutoPostSettings.fromMap(Map<String, dynamic> data) => AutoPostSettings(
         badges: data['badges'] ?? true,
         streaks: data['streaks'] ?? true,

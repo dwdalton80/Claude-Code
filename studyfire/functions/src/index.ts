@@ -373,6 +373,149 @@ function checkXpBadges(oldXp: number, newXp: number): string[] {
     .map(([, badge]) => badge);
 }
 
+// ── Firestore Triggers: Auto-Post to Group Feed ──────────────────────────────
+
+/**
+ * When a badge is earned (written by recordSessionEnd), auto-post to all groups
+ * the user belongs to if their autoPostSettings allows badge sharing.
+ */
+export const onBadgeEarned = functions.firestore
+  .document("badges/{uid}/earned/{badgeId}")
+  .onCreate(async (snap, context) => {
+    const uid = context.params.uid;
+    const badgeId = context.params.badgeId;
+
+    const groupsSnap = await db
+      .collection("groups")
+      .where("memberIds", "array-contains", uid)
+      .get();
+
+    if (groupsSnap.empty) return;
+
+    const userSnap = await db.collection("users").doc(uid).get();
+    const name = (userSnap.data()?.profile?.name as string) ?? "Someone";
+
+    const BADGE_LABELS: Record<string, string> = {
+      spark: "earned the Spark badge 🔥",
+      on_fire: "earned the On Fire badge 🔥🔥",
+      burning_bright: "is Burning Bright 🔥🔥🔥",
+      unquenchable: "is Unquenchable 🔥🔥🔥🔥",
+      flame_keeper: "is a Flame Keeper 🏆",
+      eternal_flame: "is the Eternal Flame 🏆✨",
+    };
+
+    const label = BADGE_LABELS[badgeId] ?? `earned the ${badgeId} badge`;
+
+    const writes: Promise<unknown>[] = [];
+    for (const groupDoc of groupsSnap.docs) {
+      const autoPost = groupDoc.data()?.autoPostSettings?.badgeEarned !== false;
+      if (!autoPost) continue;
+
+      writes.push(
+        groupDoc.ref.collection("feed").add({
+          type: "badgeEarned",
+          authorId: uid,
+          authorName: name,
+          content: `${name} ${label}`,
+          badgeId,
+          timestamp: admin.firestore.FieldValue.serverTimestamp(),
+          comments: [],
+          reactions: [],
+        })
+      );
+    }
+    await Promise.all(writes);
+  });
+
+/**
+ * When a memory verse is mastered (mastered field flips to true),
+ * auto-post to groups.
+ */
+export const onMemoryVerseMastered = functions.firestore
+  .document("memoryVerses/{uid}/verses/{verseId}")
+  .onUpdate(async (change, context) => {
+    const before = change.before.data();
+    const after = change.after.data();
+
+    if (before?.mastered || !after?.mastered) return; // only on first mastery
+
+    const uid = context.params.uid;
+
+    const groupsSnap = await db
+      .collection("groups")
+      .where("memberIds", "array-contains", uid)
+      .get();
+
+    if (groupsSnap.empty) return;
+
+    const userSnap = await db.collection("users").doc(uid).get();
+    const name = (userSnap.data()?.profile?.name as string) ?? "Someone";
+    const reference = (after.reference as string) ?? "a verse";
+
+    const writes: Promise<unknown>[] = [];
+    for (const groupDoc of groupsSnap.docs) {
+      const autoPost = groupDoc.data()?.autoPostSettings?.memoryVerseMastered !== false;
+      if (!autoPost) continue;
+
+      writes.push(
+        groupDoc.ref.collection("feed").add({
+          type: "memoryVerseMastered",
+          authorId: uid,
+          authorName: name,
+          content: `${name} just memorized ${reference}! 🧠✨`,
+          verseReference: reference,
+          timestamp: admin.firestore.FieldValue.serverTimestamp(),
+          comments: [],
+          reactions: [],
+        })
+      );
+    }
+    await Promise.all(writes);
+  });
+
+/**
+ * When a streak milestone is reached (recorded in streakMilestones sub-collection
+ * by streak_manager.ts), auto-post to groups.
+ */
+export const onStreakMilestone = functions.firestore
+  .document("users/{uid}/streakMilestones/{milestoneId}")
+  .onCreate(async (snap, context) => {
+    const uid = context.params.uid;
+    const { days } = snap.data() as { days: number };
+
+    const groupsSnap = await db
+      .collection("groups")
+      .where("memberIds", "array-contains", uid)
+      .get();
+
+    if (groupsSnap.empty) return;
+
+    const userSnap = await db.collection("users").doc(uid).get();
+    const name = (userSnap.data()?.profile?.name as string) ?? "Someone";
+
+    const writes: Promise<unknown>[] = [];
+    for (const groupDoc of groupsSnap.docs) {
+      const autoPost = groupDoc.data()?.autoPostSettings?.streakMilestone !== false;
+      if (!autoPost) continue;
+
+      writes.push(
+        groupDoc.ref.collection("feed").add({
+          type: "streakMilestone",
+          authorId: uid,
+          authorName: name,
+          content: `${name} hit a ${days}-day streak! 🔥`,
+          streakDays: days,
+          timestamp: admin.firestore.FieldValue.serverTimestamp(),
+          comments: [],
+          reactions: [],
+        })
+      );
+    }
+    await Promise.all(writes);
+  });
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
 async function getTodaysPassages(): Promise<Array<{ id: string; text: string; reference: string }>> {
   // Simplified: return a hardcoded daily passage
   // In production: aggregate from active reading plans + featured passage

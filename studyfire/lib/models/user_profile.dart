@@ -19,6 +19,7 @@ class UserProfile {
   final StudyLevel studyLevel;
   final StudyGoal? goal;
   final BibleVersion defaultVersion;
+  final SessionLength sessionLength;
   final DateTime lastActiveDate;
   final bool hasGraceDayAvailable;
   final int streakFreezeCount;
@@ -38,6 +39,7 @@ class UserProfile {
     required this.studyLevel,
     this.goal,
     required this.defaultVersion,
+    this.sessionLength = SessionLength.spark,
     required this.lastActiveDate,
     required this.hasGraceDayAvailable,
     required this.streakFreezeCount,
@@ -71,6 +73,10 @@ class UserProfile {
         (e) => e.name == data['defaultVersion'],
         orElse: () => BibleVersion.niv,
       ),
+      sessionLength: SessionLength.values.firstWhere(
+        (e) => e.name == data['sessionLength'],
+        orElse: () => SessionLength.spark,
+      ),
       lastActiveDate: (data['lastActiveDate'] as Timestamp?)?.toDate() ?? DateTime.now(),
       hasGraceDayAvailable: data['hasGraceDayAvailable'] ?? true,
       streakFreezeCount: data['streakFreezeCount'] ?? 0,
@@ -91,6 +97,7 @@ class UserProfile {
         'studyLevel': studyLevel.name,
         'goal': goal?.name,
         'defaultVersion': defaultVersion.name,
+        'sessionLength': sessionLength.name,
         'lastActiveDate': Timestamp.fromDate(lastActiveDate),
         'hasGraceDayAvailable': hasGraceDayAvailable,
         'streakFreezeCount': streakFreezeCount,
@@ -110,6 +117,7 @@ class UserProfile {
     StudyLevel? studyLevel,
     StudyGoal? goal,
     BibleVersion? defaultVersion,
+    SessionLength? sessionLength,
     DateTime? lastActiveDate,
     bool? hasGraceDayAvailable,
     int? streakFreezeCount,
@@ -129,6 +137,7 @@ class UserProfile {
       studyLevel: studyLevel ?? this.studyLevel,
       goal: goal ?? this.goal,
       defaultVersion: defaultVersion ?? this.defaultVersion,
+      sessionLength: sessionLength ?? this.sessionLength,
       lastActiveDate: lastActiveDate ?? this.lastActiveDate,
       hasGraceDayAvailable: hasGraceDayAvailable ?? this.hasGraceDayAvailable,
       streakFreezeCount: streakFreezeCount ?? this.streakFreezeCount,

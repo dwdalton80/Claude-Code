@@ -34,9 +34,21 @@ class FirestoreService {
     await _db.collection('users').doc(uid).update(prefixed);
   }
 
-  Future<void> updatePreferences(String uid, Map<String, dynamic> updates) async {
-    final prefixed = updates.map((k, v) => MapEntry('preferences.$k', v));
-    await _db.collection('users').doc(uid).update(prefixed);
+  Future<void> updatePreferences(
+    String uid, {
+    BibleVersion? version,
+    SessionLength? sessionLength,
+    StudyLevel? studyLevel,
+    StudyGoal? goal,
+  }) async {
+    final updates = <String, dynamic>{};
+    if (version != null) updates['profile.defaultVersion'] = version.name;
+    if (sessionLength != null) updates['profile.sessionLength'] = sessionLength.name;
+    if (studyLevel != null) updates['profile.studyLevel'] = studyLevel.name;
+    if (goal != null) updates['profile.goal'] = goal.name;
+    if (updates.isNotEmpty) {
+      await _db.collection('users').doc(uid).update(updates);
+    }
   }
 
   Future<void> updateTopicTags(String uid, List<String> tags) async {
@@ -318,6 +330,84 @@ class FirestoreService {
         .orderBy('timestamp', descending: true)
         .snapshots()
         .map((s) => s.docs.map(GroupQuestion.fromFirestore).toList());
+  }
+
+  Future<List<GroupMember>> getGroupMembers(String groupId) async {
+    final snap = await _db
+        .collection('groups')
+        .doc(groupId)
+        .collection('members')
+        .get();
+    return snap.docs.map(GroupMember.fromFirestore).toList();
+  }
+
+  // Convenience: create group with just a name
+  Future<String> createGroupSimple(String uid, String name) async {
+    final inviteCode = _generateCode();
+    final groupRef = _db.collection('groups').doc();
+    final now = FieldValue.serverTimestamp();
+    await groupRef.set({
+      'name': name,
+      'creatorId': uid,
+      'inviteCode': inviteCode,
+      'memberCount': 1,
+      'memberIds': [uid],
+      'createdAt': now,
+      'lastActivity': now,
+      'autoPostSettings': AutoPostSettings.defaults().toMap(),
+    });
+    await groupRef.collection('members').doc(uid).set({
+      'joinedAt': now,
+      'role': GroupRole.creator.name,
+      'weeklyXp': 0,
+      'currentStreak': 0,
+      'badgeCount': 0,
+      'versesMemorized': 0,
+      'displayName': '',
+    });
+    return groupRef.id;
+  }
+
+  // Convenience: join group by invite code
+  Future<void> joinGroupByCode(String uid, String inviteCode) async {
+    final group = await getGroupByInviteCode(inviteCode.toUpperCase());
+    if (group == null) throw Exception('Invalid invite code');
+    await joinGroup(group.id, uid, AutoPostSettings.defaults());
+    await _db.collection('groups').doc(group.id).update({
+      'memberIds': FieldValue.arrayUnion([uid]),
+    });
+  }
+
+  // Convenience: post a typed message to group feed
+  Future<void> postFeedMessage(
+    String groupId,
+    String uid,
+    String authorName,
+    FeedItemType type,
+    String content,
+  ) async {
+    await _db.collection('groups').doc(groupId).collection('feed').add({
+      'type': type.name,
+      'authorId': uid,
+      'authorName': authorName,
+      'content': content,
+      'timestamp': FieldValue.serverTimestamp(),
+      'comments': [],
+      'reactions': [],
+    });
+    await _db.collection('groups').doc(groupId).update({
+      'lastActivity': FieldValue.serverTimestamp(),
+    });
+  }
+
+  String _generateCode() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    final buf = StringBuffer();
+    final rand = DateTime.now().millisecondsSinceEpoch;
+    for (var i = 0; i < 6; i++) {
+      buf.write(chars[(rand >> (i * 5)) % chars.length]);
+    }
+    return buf.toString();
   }
 
   // ── Auto-bookmark ──────────────────────────────────────────────────────────

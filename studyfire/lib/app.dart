@@ -3,17 +3,33 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'core/theme/app_theme.dart';
+import 'core/constants/colors.dart';
+import 'core/constants/typography.dart';
+import 'core/services/firestore_service.dart';
+import 'models/user_profile.dart';
 import 'screens/onboarding/onboarding_screen.dart';
 import 'screens/quest/quest_screen.dart';
-import 'screens/spark/spark_screen.dart';
-import 'screens/memory_verse/memory_verse_screen.dart';
+import 'screens/reader/reader_screen.dart';
+import 'screens/quiz/quiz_screen.dart'; // QuizHomeScreen, QuizScreen
+import 'screens/ai_study/ai_study_screen.dart';
+import 'screens/word_of_day/word_of_day_screen.dart';
 import 'screens/journal/journal_screen.dart';
+import 'screens/groups/groups_screen.dart';
+import 'screens/settings/settings_screen.dart';
 import 'screens/profile/profile_screen.dart';
 
 // ── Providers ─────────────────────────────────────────────────────────────────
 
 final authStreamProvider = StreamProvider<User?>((ref) {
   return FirebaseAuth.instance.authStateChanges();
+});
+
+final currentProfileProvider = StreamProvider.autoDispose<UserProfile?>((ref) {
+  final user = ref.watch(authStreamProvider).valueOrNull;
+  if (user == null) return const Stream.empty();
+  return FirestoreService().watchProfile(user.uid).map(
+    (p) => p,
+  );
 });
 
 // ── Router ────────────────────────────────────────────────────────────────────
@@ -51,11 +67,46 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: '/reader',
-            builder: (_, __) => const _PlaceholderScreen(title: 'Bible Reader'),
+            builder: (context, state) {
+              final user = FirebaseAuth.instance.currentUser;
+              final extra = state.extra as Map<String, dynamic>?;
+              return ReaderScreen(
+                uid: user?.uid ?? '',
+                book: extra?['book'] as String? ?? 'jhn',
+                chapter: extra?['chapter'] as int? ?? 3,
+                version: extra?['version'] as String? ?? 'kjv',
+              );
+            },
           ),
           GoRoute(
             path: '/games',
-            builder: (_, __) => const _PlaceholderScreen(title: 'Games'),
+            builder: (context, state) {
+              final user = FirebaseAuth.instance.currentUser;
+              return QuizHomeScreen(uid: user?.uid ?? '');
+            },
+            routes: [
+              GoRoute(
+                path: 'quiz/:topic',
+                builder: (context, state) {
+                  final user = FirebaseAuth.instance.currentUser;
+                  return QuizScreen(
+                    uid: user?.uid ?? '',
+                    topicTag: state.pathParameters['topic'],
+                  );
+                },
+              ),
+              GoRoute(
+                path: 'word-of-day',
+                builder: (context, state) {
+                  final user = FirebaseAuth.instance.currentUser;
+                  final extra = state.extra as Map<String, dynamic>?;
+                  return WordOfDayScreen(
+                    uid: user?.uid ?? '',
+                    isPremium: extra?['isPremium'] as bool? ?? false,
+                  );
+                },
+              ),
+            ],
           ),
           GoRoute(
             path: '/notes',
@@ -63,13 +114,40 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: '/groups',
-            builder: (_, __) => const _PlaceholderScreen(title: 'Groups'),
+            builder: (_, __) => const _GroupsRouteWrapper(),
           ),
           GoRoute(
             path: '/profile',
             builder: (_, __) => const ProfileScreen(),
+            routes: [
+              GoRoute(
+                path: 'settings',
+                builder: (context, state) {
+                  final extra = state.extra as Map<String, dynamic>?;
+                  final profile = extra?['profile'] as UserProfile?;
+                  if (profile == null) {
+                    return const _ProfileLoadingWrapper();
+                  }
+                  return SettingsScreen(profile: profile);
+                },
+              ),
+            ],
           ),
         ],
+      ),
+      // Deep-link: open AI study from anywhere
+      GoRoute(
+        path: '/ai-study',
+        builder: (context, state) {
+          final user = FirebaseAuth.instance.currentUser;
+          final extra = state.extra as Map<String, dynamic>?;
+          return AiStudyScreen(
+            passage: extra?['passage'] as String? ?? '',
+            reference: extra?['reference'] as String? ?? '',
+            version: extra?['version'] as String? ?? 'kjv',
+            uid: user?.uid ?? '',
+          );
+        },
       ),
     ],
   );
@@ -131,21 +209,52 @@ class AppShell extends StatelessWidget {
   }
 }
 
-class _PlaceholderScreen extends StatelessWidget {
-  final String title;
-  const _PlaceholderScreen({required this.title});
+// ── Groups Route Wrapper ──────────────────────────────────────────────────────
+
+class _GroupsRouteWrapper extends ConsumerWidget {
+  const _GroupsRouteWrapper();
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.deepSlate,
-      appBar: AppBar(title: Text(title)),
-      body: Center(
-        child: Text(
-          title,
-          style: AppTypography.displaySmall,
-        ),
+  Widget build(BuildContext context, WidgetRef ref) {
+    final profileAsync = ref.watch(currentProfileProvider);
+    final user = FirebaseAuth.instance.currentUser;
+    return profileAsync.when(
+      loading: () => const Scaffold(
+        backgroundColor: AppColors.deepSlate,
+        body: Center(child: CircularProgressIndicator()),
       ),
+      error: (_, __) => GroupsScreen(uid: user?.uid ?? '', isPremium: false),
+      data: (p) => GroupsScreen(uid: user?.uid ?? '', isPremium: p?.isPremium ?? false),
+    );
+  }
+}
+
+// ── Profile Loading Wrapper ───────────────────────────────────────────────────
+
+class _ProfileLoadingWrapper extends ConsumerWidget {
+  const _ProfileLoadingWrapper();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final profileAsync = ref.watch(currentProfileProvider);
+    return profileAsync.when(
+      loading: () => const Scaffold(
+        backgroundColor: AppColors.deepSlate,
+        body: Center(child: CircularProgressIndicator()),
+      ),
+      error: (_, __) => const Scaffold(
+        backgroundColor: AppColors.deepSlate,
+        body: Center(child: Text('Error loading profile')),
+      ),
+      data: (profile) {
+        if (profile == null) {
+          return const Scaffold(
+            backgroundColor: AppColors.deepSlate,
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+        return SettingsScreen(profile: profile);
+      },
     );
   }
 }
