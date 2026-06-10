@@ -1,0 +1,137 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helper functions ──────────────────────────────────────────────────────
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isPremium() {
+      return isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.profile.isPremium == true;
+    }
+
+    // ── Users ─────────────────────────────────────────────────────────────────
+    match /users/{uid} {
+      allow read: if isOwner(uid);
+      allow write: if isOwner(uid);
+
+      match /fcmTokens/{token} {
+        allow read, write: if isOwner(uid);
+      }
+
+      match /aiUsage/{date} {
+        allow read, write: if isOwner(uid);
+      }
+
+      match /debriefUsage/{month} {
+        allow read, write: if isOwner(uid);
+      }
+    }
+
+    // ── Bible (read-only for all authenticated users) ─────────────────────────
+    match /bible/{version}/{book}/{chapter}/{verse} {
+      allow read: if isSignedIn();
+      allow write: if false; // Cloud Functions only
+    }
+
+    // ── Spark cache (read-only) ───────────────────────────────────────────────
+    match /sparkcache/{date}/{passageId}/{version} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    // ── Daily cache (read-only) ───────────────────────────────────────────────
+    match /dailycache/{date} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    // ── Highlights ─────────────────────────────────────────────────────────────
+    match /highlights/{uid}/verses/{verseId} {
+      allow read, write: if isOwner(uid);
+    }
+
+    // ── Journal ────────────────────────────────────────────────────────────────
+    match /journal/{uid}/entries/{entryId} {
+      allow read, write: if isOwner(uid);
+    }
+
+    // ── Badges ─────────────────────────────────────────────────────────────────
+    match /badges/{uid}/earned/{badgeId} {
+      allow read: if isSignedIn(); // others can see your badges
+      allow write: if false;       // Cloud Functions only
+    }
+
+    // ── Reading plans ──────────────────────────────────────────────────────────
+    match /readingPlans/{uid}/plans/{planId} {
+      allow read, write: if isOwner(uid);
+    }
+
+    // ── Quiz history ───────────────────────────────────────────────────────────
+    match /quizHistory/{uid}/quizzes/{quizId} {
+      allow read, write: if isOwner(uid);
+    }
+
+    // ── Memory verses ──────────────────────────────────────────────────────────
+    match /memoryVerses/{uid}/verses/{verseId} {
+      allow read, write: if isOwner(uid);
+    }
+
+    // ── Study cache ────────────────────────────────────────────────────────────
+    match /studycache/{uid}/passages/{passageId} {
+      allow read, write: if isOwner(uid);
+    }
+
+    // ── Groups ─────────────────────────────────────────────────────────────────
+    match /groups/{groupId} {
+      allow read: if isSignedIn() &&
+        exists(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid));
+
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() &&
+        get(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid)).data.role == 'creator';
+
+      match /members/{uid} {
+        allow read: if isSignedIn() &&
+          exists(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid));
+        allow write: if isOwner(uid) ||
+          get(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid)).data.role == 'creator';
+      }
+
+      match /feed/{feedItemId} {
+        allow read: if isSignedIn() &&
+          exists(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid));
+        allow create: if isSignedIn() &&
+          exists(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid));
+        allow update, delete: if isSignedIn() && request.auth.uid == resource.data.authorUid;
+      }
+    }
+
+    // ── Group comments ─────────────────────────────────────────────────────────
+    match /groupComments/{groupId}/{feedItemId}/comments/{commentId} {
+      allow read: if isSignedIn() &&
+        exists(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid));
+      allow create: if isSignedIn() &&
+        exists(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid));
+      allow update, delete: if isSignedIn() && request.auth.uid == resource.data.authorUid;
+    }
+
+    // ── Group questions ────────────────────────────────────────────────────────
+    match /groupQuestions/{groupId}/questions/{questionId} {
+      allow read: if isSignedIn() &&
+        exists(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid));
+      allow create: if isSignedIn() &&
+        exists(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid));
+      allow update: if isSignedIn() && (
+        request.auth.uid == resource.data.authorUid ||
+        get(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid)).data.role == 'creator'
+      );
+    }
+  }
+}

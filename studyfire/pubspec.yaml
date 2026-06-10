@@ -1,0 +1,114 @@
+name: studyfire
+description: Ignite your study. Every day. — Gamified AI-assisted Bible study for iOS.
+version: 1.0.0+1
+publish_to: none
+
+environment:
+  sdk: ">=3.2.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Firebase
+  firebase_core: ^2.24.2
+  firebase_auth: ^4.16.0
+  cloud_firestore: ^4.14.0
+  firebase_storage: ^11.6.0
+  firebase_messaging: ^14.7.9
+  firebase_analytics: ^10.8.0
+
+  # Auth providers
+  google_sign_in: ^6.2.1
+  sign_in_with_apple: ^6.1.0
+
+  # State management
+  flutter_riverpod: ^2.4.9
+  riverpod_annotation: ^2.3.3
+
+  # Navigation
+  go_router: ^13.2.0
+
+  # Payments
+  purchases_flutter: ^6.25.0
+
+  # UI & animations
+  lottie: ^3.1.0
+  confetti: ^0.7.0
+  google_fonts: ^6.1.0
+  shimmer: ^3.0.0
+  flutter_animate: ^4.5.0
+  cached_network_image: ^3.3.1
+
+  # Haptics
+  flutter_haptic_feedback: ^1.0.0
+
+  # Notifications
+  flutter_local_notifications: ^17.0.0
+  timezone: ^0.9.2
+
+  # Storage & persistence
+  shared_preferences: ^2.2.2
+  hive_flutter: ^1.1.0
+
+  # Networking & serialization
+  http: ^1.2.0
+  dio: ^5.4.1
+  json_annotation: ^4.8.1
+  freezed_annotation: ^2.4.1
+
+  # Text & formatting
+  intl: ^0.19.0
+  flutter_markdown: ^0.6.22
+
+  # Media
+  image_picker: ^1.0.7
+  share_plus: ^9.0.0
+  url_launcher: ^6.2.5
+
+  # Utilities
+  uuid: ^4.3.3
+  collection: ^1.18.0
+  rxdart: ^0.27.7
+  connectivity_plus: ^6.0.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+  build_runner: ^2.4.8
+  json_serializable: ^6.7.1
+  freezed: ^2.4.7
+  riverpod_generator: ^2.3.9
+  custom_lint: ^0.6.4
+  riverpod_lint: ^2.3.7
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/images/
+    - assets/animations/
+
+  fonts:
+    - family: Lora
+      fonts:
+        - asset: assets/fonts/Lora-Regular.ttf
+        - asset: assets/fonts/Lora-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Lora-Italic.ttf
+          style: italic
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter-Regular.ttf
+        - asset: assets/fonts/Inter-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Inter-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Inter-Bold.ttf
+          weight: 700
+    - family: NotoSerif
+      fonts:
+        - asset: assets/fonts/NotoSerif-Regular.ttf
+        - asset: assets/fonts/NotoSerif-Bold.ttf
+          weight: 700
