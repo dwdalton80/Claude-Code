@@ -56,8 +56,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   String _currentBook = '';
   List<BibleVerse> _verses = [];
   bool _loading = true;
-  final Map<String, String> _highlights = {}; // verseId → color name
-  final Map<String, String> _notes = {}; // verseId → note
+  final Map<String, String> _highlights = {};
+  final Map<String, String> _notes = {};
   int _sessionVerseCount = 0;
   double _sessionProgress = 0.0;
 
@@ -65,7 +65,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   final _db = FirestoreService();
   final _xpService = XpService();
 
-  // Auto-hide timer for focus mode
   bool _tapToReveal = false;
 
   @override
@@ -76,12 +75,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     _currentBook = widget.book;
     _loadVerses();
 
-    // Auto-hide chrome 2 seconds after start
     Future.delayed(const Duration(seconds: 2), () {
       if (mounted) _enterFocusMode();
     });
 
-    // Auto-bookmark every 10 seconds
     Stream.periodic(const Duration(seconds: 10)).listen((_) {
       if (mounted) _savePosition();
     });
@@ -94,8 +91,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   }
 
   Future<void> _loadVerses() async {
+    if (!mounted) return;
     setState(() => _loading = true);
     final verses = await _db.getVerses(_currentVersion, _currentBook, _currentChapter);
+    if (!mounted) return;
     setState(() {
       _verses = verses;
       _loading = false;
@@ -174,7 +173,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
               label: 'Save Note',
               height: 44,
               onPressed: () {
-                setState(() => _notes[verse.id] = ctrl.text);
+                if (mounted) setState(() => _notes[verse.id] = ctrl.text);
                 Navigator.pop(context);
               },
             ),
@@ -195,7 +194,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
         verse: verse,
         highlights: _highlights,
         onHighlight: (color) {
-          setState(() => _highlights[verse.id] = color.name);
+          if (mounted) setState(() => _highlights[verse.id] = color.name);
           _db.saveHighlight(uid: widget.uid, verseId: verse.id, color: color.name);
           Navigator.pop(context);
         },
@@ -213,7 +212,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
         },
         onAddToJournal: () {
           Navigator.pop(context);
-          // Navigate to journal with pre-filled scripture ref
         },
         onAskAi: () {
           Navigator.pop(context);
@@ -221,7 +219,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
         },
         onAddToMemory: () {
           Navigator.pop(context);
-          // Add verse to memory queue
         },
         onWordOfDay: () {
           Navigator.pop(context);
@@ -231,13 +228,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     );
   }
 
-  void _openAiStudy(BibleVerse verse) {
-    // Navigate to AI Study Mode
-  }
+  void _openAiStudy(BibleVerse verse) {}
 
-  void _showWordOfDay(BibleVerse verse) {
-    // Show Word of Day bottom sheet for this verse
-  }
+  void _showWordOfDay(BibleVerse verse) {}
 
   void _showSearchSheet() {
     showModalBottomSheet(
@@ -254,7 +247,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
         builder: (__, scrollCtrl) => _SearchSheet(
           currentRef: '$_currentBook $_currentChapter',
           onNavigate: (book, chapter, verse) {
-            setState(() {
+            if (mounted) setState(() {
               _currentBook = book;
               _currentChapter = chapter;
             });
@@ -277,7 +270,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
         currentBook: _currentBook,
         currentChapter: _currentChapter,
         onPick: (book, chapter) {
-          setState(() {
+          if (mounted) setState(() {
             _currentBook = book;
             _currentChapter = chapter;
           });
@@ -310,17 +303,13 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
         backgroundColor: AppColors.deepSlate,
         body: Stack(
           children: [
-            // Progress bar at very top
             Positioned(
               top: 0, left: 0, right: 0,
               child: SessionProgressBar(progress: _sessionProgress),
             ),
-
-            // Main content
             SafeArea(
               child: Column(
                 children: [
-                  // Top toolbar — hidden in focus mode
                   AnimatedSlide(
                     offset: _chromVisible ? Offset.zero : const Offset(0, -1),
                     duration: const Duration(milliseconds: 250),
@@ -339,8 +328,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                       ),
                     ),
                   ),
-
-                  // Verses
                   Expanded(
                     child: _loading
                         ? const Center(child: CircularProgressIndicator())
@@ -353,8 +340,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                             scrollController: _scrollController,
                           ),
                   ),
-
-                  // Chapter nav — hidden in focus mode
                   AnimatedSlide(
                     offset: _chromVisible ? Offset.zero : const Offset(0, 1),
                     duration: const Duration(milliseconds: 250),
@@ -397,18 +382,16 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                       ? const Icon(Icons.check, color: AppColors.warmGold)
                       : null,
                   onTap: () {
-                    setState(() => _currentVersion = v);
+                    if (mounted) setState(() => _currentVersion = v);
                     _loadVerses();
                     Navigator.pop(context);
                   },
                 )),
-            // Premium: compare side-by-side
             ListTile(
               title: const Text('Compare All 3 🔒', style: AppTypography.bodyLarge),
               subtitle: Text('Premium', style: AppTypography.bodySmall.copyWith(color: AppColors.warmGold)),
               onTap: () {
                 Navigator.pop(context);
-                // Show paywall or multi-version bottom sheet
               },
             ),
           ],
@@ -670,8 +653,6 @@ class _VerseActionSheet extends StatelessWidget {
             style: AppTypography.bodySmall.copyWith(fontStyle: FontStyle.italic),
           ),
           const SizedBox(height: 20),
-
-          // Highlight row
           Row(
             children: [
               Text('Highlight:', style: AppTypography.labelSmall),
@@ -694,8 +675,6 @@ class _VerseActionSheet extends StatelessWidget {
             ],
           ),
           const Divider(height: 24),
-
-          // Action tiles
           _ActionTile(icon: Icons.copy_outlined, label: 'Copy', onTap: onCopy),
           _ActionTile(icon: Icons.share_outlined, label: 'Share  +${XpRewards.shareVerse} XP', onTap: onShare),
           _ActionTile(icon: Icons.sticky_note_2_outlined, label: 'Add to Journal', onTap: onAddToJournal),
@@ -825,7 +804,6 @@ class _ReferenceTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Parse "Romans 8:28" style references
     final ref = _parseRef(query);
     if (ref != null) {
       return ListTile(
@@ -870,7 +848,6 @@ class _KeywordTab extends StatelessWidget {
     if (query.length < 3) {
       return Center(child: Text('Type at least 3 characters', style: AppTypography.bodySmall));
     }
-    // TODO: implement Firestore full-text search via API.Bible keyword endpoint
     return Center(child: Text('Searching "$query"…', style: AppTypography.bodySmall));
   }
 }
@@ -885,6 +862,28 @@ class _BrowseTab extends StatefulWidget {
 
 class _BrowseTabState extends State<_BrowseTab> {
   String? _selectedBook;
+String _bookNameToId(String name) {
+    const map = {
+      'Genesis': 'gen', 'Exodus': 'exo', 'Leviticus': 'lev', 'Numbers': 'num',
+      'Deuteronomy': 'deu', 'Joshua': 'jos', 'Judges': 'jdg', 'Ruth': 'rut',
+      '1 Samuel': '1sa', '2 Samuel': '2sa', '1 Kings': '1ki', '2 Kings': '2ki',
+      '1 Chronicles': '1ch', '2 Chronicles': '2ch', 'Ezra': 'ezr', 'Nehemiah': 'neh',
+      'Esther': 'est', 'Job': 'job', 'Psalms': 'psa', 'Proverbs': 'pro',
+      'Ecclesiastes': 'ecc', 'Song of Solomon': 'sng', 'Isaiah': 'isa',
+      'Jeremiah': 'jer', 'Lamentations': 'lam', 'Ezekiel': 'ezk', 'Daniel': 'dan',
+      'Hosea': 'hos', 'Joel': 'jol', 'Amos': 'amo', 'Obadiah': 'oba',
+      'Jonah': 'jon', 'Micah': 'mic', 'Nahum': 'nam', 'Habakkuk': 'hab',
+      'Zephaniah': 'zep', 'Haggai': 'hag', 'Zechariah': 'zec', 'Malachi': 'mal',
+      'Matthew': 'mat', 'Mark': 'mrk', 'Luke': 'luk', 'John': 'jhn',
+      'Acts': 'act', 'Romans': 'rom', '1 Corinthians': '1co', '2 Corinthians': '2co',
+      'Galatians': 'gal', 'Ephesians': 'eph', 'Philippians': 'php', 'Colossians': 'col',
+      '1 Thessalonians': '1th', '2 Thessalonians': '2th', '1 Timothy': '1ti',
+      '2 Timothy': '2ti', 'Titus': 'tit', 'Philemon': 'phm', 'Hebrews': 'heb',
+      'James': 'jas', '1 Peter': '1pe', '2 Peter': '2pe', '1 John': '1jn',
+      '2 John': '2jn', '3 John': '3jn', 'Jude': 'jud', 'Revelation': 'rev',
+    };
+    return map[name] ?? name.toLowerCase().replaceAll(' ', '_');
+  }
 
   static const _otBooks = [
     'Genesis', 'Exodus', 'Leviticus', 'Numbers', 'Deuteronomy',
@@ -919,7 +918,7 @@ class _BrowseTabState extends State<_BrowseTab> {
     return _ChapterGrid(
       book: _selectedBook!,
       onSelect: (ch) => widget.onNavigate(
-        _selectedBook!.toLowerCase().replaceAll(' ', '_'),
+        _bookNameToId(_selectedBook!),
         ch,
         1,
       ),
@@ -965,9 +964,23 @@ class _ChapterGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const chapterCounts = {
-      'Genesis': 50, 'Exodus': 40, 'Psalms': 150, 'Proverbs': 31,
+      'Genesis': 50, 'Exodus': 40, 'Leviticus': 27, 'Numbers': 36,
+      'Deuteronomy': 34, 'Joshua': 24, 'Judges': 21, 'Ruth': 4,
+      '1 Samuel': 31, '2 Samuel': 24, '1 Kings': 22, '2 Kings': 25,
+      '1 Chronicles': 29, '2 Chronicles': 36, 'Ezra': 10, 'Nehemiah': 13,
+      'Esther': 10, 'Job': 42, 'Psalms': 150, 'Proverbs': 31,
+      'Ecclesiastes': 12, 'Song of Solomon': 8, 'Isaiah': 66,
+      'Jeremiah': 52, 'Lamentations': 5, 'Ezekiel': 48, 'Daniel': 12,
+      'Hosea': 14, 'Joel': 3, 'Amos': 9, 'Obadiah': 1,
+      'Jonah': 4, 'Micah': 7, 'Nahum': 3, 'Habakkuk': 3,
+      'Zephaniah': 3, 'Haggai': 2, 'Zechariah': 14, 'Malachi': 4,
       'Matthew': 28, 'Mark': 16, 'Luke': 24, 'John': 21,
-      'Acts': 28, 'Romans': 16, 'Revelation': 22,
+      'Acts': 28, 'Romans': 16, '1 Corinthians': 16, '2 Corinthians': 13,
+      'Galatians': 6, 'Ephesians': 6, 'Philippians': 4, 'Colossians': 4,
+      '1 Thessalonians': 5, '2 Thessalonians': 3, '1 Timothy': 6,
+      '2 Timothy': 4, 'Titus': 3, 'Philemon': 1, 'Hebrews': 13,
+      'James': 5, '1 Peter': 5, '2 Peter': 3, '1 John': 5,
+      '2 John': 1, '3 John': 1, 'Jude': 1, 'Revelation': 22,
     };
     final count = chapterCounts[book] ?? 30;
 
@@ -1022,7 +1035,7 @@ class _ChapterPicker extends StatelessWidget {
     return _BrowseTab(
       onNavigate: (book, ch, _) {
         onPick(book, ch);
-        Navigator.pop(context);
+        if (Navigator.canPop(context)) Navigator.pop(context);
       },
     );
   }

@@ -71,10 +71,12 @@ class FirestoreService {
     Query query = _db
         .collection('bible')
         .doc(version)
-        .collection(book)
+        .collection('books')
+        .doc(book)
+        .collection('chapters')
         .doc(chapter.toString())
         .collection('verses')
-        .orderBy('verseNum');
+        .orderBy('verseNumber');
 
     if (startVerse != null) query = query.where('verseNum', isGreaterThanOrEqualTo: startVerse);
     if (endVerse != null) query = query.where('verseNum', isLessThanOrEqualTo: endVerse);
@@ -91,10 +93,12 @@ class FirestoreService {
     final snap = await _db
         .collection('bible')
         .doc(version)
-        .collection(parts['book']!)
+        .collection('books')
+        .doc(parts['book']!)
+        .collection('chapters')
         .doc(parts['chapter']!)
         .collection('verses')
-        .where('verseNum', isEqualTo: int.parse(parts['verse']!))
+        .where('verseNumber', isEqualTo: int.parse(parts['verse']!))
         .limit(1)
         .get();
 
@@ -219,17 +223,16 @@ class FirestoreService {
         .map((s) => s.docs.map(MemoryVerse.fromFirestore).toList());
   }
 
-  Future<List<MemoryVerse>> getVersesDueForReview(String uid) async {
+ Future<List<MemoryVerse>> getVersesDueForReview(String uid) async {
     final snap = await _db
         .collection('memoryVerses')
         .doc(uid)
         .collection('verses')
-        .where('mastered', isEqualTo: true)
+        .where('mastered', isEqualTo: false)
         .where('nextReviewDate', isLessThanOrEqualTo: Timestamp.now())
         .get();
     return snap.docs.map(MemoryVerse.fromFirestore).toList();
   }
-
   Future<void> saveMemoryVerse(String uid, MemoryVerse verse) async {
     await _db
         .collection('memoryVerses')

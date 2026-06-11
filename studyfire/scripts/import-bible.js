@@ -182,25 +182,37 @@ async function importVersion(versionKey) {
 
 function extractVerses(chapterData) {
   const verses = [];
+  const verseMap = {};
 
-  function walk(node) {
-    if (!node) return;
-    if (Array.isArray(node)) {
-      node.forEach(walk);
-      return;
-    }
-    if (node.type === "verse") {
-      const text = collectText(node.content || []);
-      if (text.trim()) {
-        verses.push({ number: parseInt(node.number, 10), text: text.trim() });
+  function walk(nodes) {
+    if (!nodes || !Array.isArray(nodes)) return;
+    for (const node of nodes) {
+      if (!node) continue;
+      // Verse marker tag
+      if (node.type === 'tag' && node.name === 'verse' && node.attrs?.number) {
+        const num = parseInt(node.attrs.number, 10);
+        if (!verseMap[num]) verseMap[num] = '';
       }
-    } else if (node.content) {
-      walk(node.content);
+      // Text node with verseId attribute
+      if (node.type === 'text' && node.text && node.attrs?.verseId) {
+        const parts = node.attrs.verseId.split('.');
+        const num = parseInt(parts[2], 10);
+        if (num) verseMap[num] = (verseMap[num] || '') + node.text;
+      }
+      // Recurse into items or content
+      if (node.items) walk(node.items);
+      if (node.content) walk(node.content);
     }
   }
 
-  walk(chapterData.content);
-  return verses;
+  walk(chapterData.content || chapterData);
+
+  for (const [num, text] of Object.entries(verseMap)) {
+    const cleaned = text.trim();
+    if (cleaned) verses.push({ number: parseInt(num, 10), text: cleaned });
+  }
+
+  return verses.sort((a, b) => a.number - b.number);
 }
 
 function collectText(nodes) {
