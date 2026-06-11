@@ -15,7 +15,7 @@
  *
  * API.Bible version IDs:
  *   KJV:  de4e12af7f28f599-02
- *   CSB:  a556c6d4b4b09675-01  (closest available: HCSB 1999)
+ *   CSB:  a556c5305ee15c3f-01  (closest available: HCSB 1999)
  *   NIV:  78a9f6124f344018-01
  *
  * Run once per version. Takes ~30 min per version. Costs ~100k Firestore writes.
@@ -57,7 +57,7 @@ const DRY_RUN = HAS("--dry-run");
 const VERSION_IDS = {
   kjv: "de4e12af7f28f599-02",
   niv: "78a9f6124f344018-01",
-  csb: "a556c6d4b4b09675-01",
+  csb: "a556c5305ee15c3f-01",
 };
 
 const VERSIONS_TO_IMPORT = VERSION_ARG
