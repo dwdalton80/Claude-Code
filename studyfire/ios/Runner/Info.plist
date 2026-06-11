@@ -88,10 +88,9 @@
 			<string>Editor</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>$(REVERSED_CLIENT_ID)</string>
+				<string>com.googleusercontent.apps.225393232981-0lsu21192mnu8lf3bfn4f42ljt2f1vo2</string>
 			</array>
 		</dict>
-	</dict>
 	</array>
 
 	<!-- ── RevenueCat (no extra plist keys required) ─────────────────────────── -->

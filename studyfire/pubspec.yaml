@@ -11,12 +11,13 @@ dependencies:
     sdk: flutter
 
   # Firebase
-  firebase_core: ^2.24.2
-  firebase_auth: ^4.16.0
-  cloud_firestore: ^4.14.0
-  firebase_storage: ^11.6.0
-  firebase_messaging: ^14.7.9
-  firebase_analytics: ^10.8.0
+  firebase_core: ^4.10.0
+  firebase_auth: ^6.5.2
+  cloud_firestore: ^6.5.0
+  firebase_storage: ^13.4.2
+  firebase_messaging: ^16.3.0
+  firebase_analytics: ^12.4.2
+  cloud_functions: ^6.3.2
 
   # Auth providers
   google_sign_in: ^6.2.1
@@ -30,7 +31,7 @@ dependencies:
   go_router: ^13.2.0
 
   # Payments
-  purchases_flutter: ^6.25.0
+  purchases_flutter: ^10.2.2
 
   # UI & animations
   lottie: ^3.1.0
@@ -41,7 +42,6 @@ dependencies:
   cached_network_image: ^3.3.1
 
   # Haptics
-  flutter_haptic_feedback: ^1.0.0
 
   # Notifications
   flutter_local_notifications: ^17.0.0
@@ -63,7 +63,7 @@ dependencies:
 
   # Media
   image_picker: ^1.0.7
-  share_plus: ^9.0.0
+  share_plus: ^12.0.2
   url_launcher: ^6.2.5
 
   # Utilities

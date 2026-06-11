@@ -28,13 +28,14 @@ class DefaultFirebaseOptions {
   }
 
   // Replace these placeholder values by running: flutterfire configure
+
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'YOUR_IOS_API_KEY',
-    appId: 'YOUR_IOS_APP_ID',
-    messagingSenderId: 'YOUR_MESSAGING_SENDER_ID',
-    projectId: 'YOUR_PROJECT_ID',
-    storageBucket: 'YOUR_PROJECT_ID.appspot.com',
-    iosBundleId: 'com.yourcompany.studyfire',
-    iosClientId: 'YOUR_IOS_CLIENT_ID',
+    apiKey: 'AIzaSyBDC5t0UmODvsZyDiC2_Ce39j1NI2rcWQY',
+    appId: '1:225393232981:ios:67cb1dc717ce8bfc8958dc',
+    messagingSenderId: '225393232981',
+    projectId: 'studyfire-11710',
+    storageBucket: 'studyfire-11710.firebasestorage.app',
+    iosClientId: '225393232981-0lsu21192mnu8lf3bfn4f42ljt2f1vo2.apps.googleusercontent.com',
+    iosBundleId: 'com.derekdalton.studyfire',
   );
 }

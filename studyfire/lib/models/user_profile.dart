@@ -4,7 +4,7 @@ enum StudyLevel { beginner, growing, scholar }
 enum BibleVersion { kjv, csb, niv }
 enum SessionLength { spark, short, deep }
 enum StudyGoal { readMore, understandDeeper, memorize, applySermons }
-enum AppTheme { dark, light, sepia, auto }
+enum UserTheme { dark, light, sepia, auto }
 
 class UserProfile {
   final String uid;
