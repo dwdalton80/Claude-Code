@@ -133,7 +133,7 @@ export async function sendFocusCompanion(): Promise<void> {
   const promises = usersSnap.docs.map(async (doc) => {
     const uid = doc.id;
     const variantIdx = Math.floor(Math.random() * FOCUS_VARIANTS.length);
-    const title = FOCUS_VARIANTS[variantIdx];
+    const _title = FOCUS_VARIANTS[variantIdx]; void _title;
 
     await sendPushNotification({
       uid,

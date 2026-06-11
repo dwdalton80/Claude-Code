@@ -1,8 +1,8 @@
-import * as functions from "firebase-functions";
+import * as functions from "firebase-functions/v1";
 import * as admin from "firebase-admin";
 import { generateSparkQuestion } from "./claude/spark_questions";
 import { generateAiStudy, StudyContext } from "./claude/ai_study";
-import { generateQuizBatch, generateWordOfDay } from "./claude/quiz_generation";
+import { generateQuizBatch } from "./claude/quiz_generation";
 import { generateSermonDebrief, suggestSermonTitle, DebriefContext } from "./claude/sermon_debrief";
 import { recordStudyActivity, replenishGraceDays } from "./gamification/streak_manager";
 import { sm2Update, scoreToGrade } from "./gamification/sm2_algorithm";
@@ -21,9 +21,7 @@ const db = admin.firestore();
  * Pre-generates today's Spark question for each active passage.
  * One Claude call per passage, result shared with ALL free users.
  */
-export const generateDailySpark = functions.scheduler
-  .onSchedule("0 2 * * *")
-  .onRun(async () => {
+export const generateDailySpark = functions.pubsub.schedule("0 2 * * *").onRun(async () => {
     functions.logger.info("Generating daily spark questions");
 
     const today = dateKey(new Date());
@@ -58,9 +56,7 @@ export const generateDailySpark = functions.scheduler
  * Pre-generates daily quiz questions and Word of the Day via Batch API.
  * 50% cost savings vs individual API calls.
  */
-export const generateDailyCache = functions.scheduler
-  .onSchedule("30 2 * * *")
-  .onRun(async () => {
+export const generateDailyCache = functions.pubsub.schedule("30 2 * * *").onRun(async () => {
     functions.logger.info("Generating daily cache (quiz + word of day)");
 
     const today = dateKey(new Date());
@@ -89,32 +85,24 @@ export const generateDailyCache = functions.scheduler
 /**
  * Replenishes grace day tokens every Monday.
  */
-export const weeklyGraceReplenish = functions.scheduler
-  .onSchedule("0 0 * * 1")
-  .onRun(async () => {
+export const weeklyGraceReplenish = functions.pubsub.schedule("0 0 * * 1").onRun(async () => {
     functions.logger.info("Replenishing grace day tokens");
     await replenishGraceDays();
   });
 
 // ── Scheduled: Notifications ─────────────────────────────────────────────────
 
-export const sendEveningStreakReminders = functions.scheduler
-  .onSchedule("0 20 * * *")
-  .onRun(async () => {
+export const sendEveningStreakReminders = functions.pubsub.schedule("0 20 * * *").onRun(async () => {
     functions.logger.info("Sending streak reminders");
     await sendStreakReminders();
   });
 
-export const sendMorningFocusCompanion = functions.scheduler
-  .onSchedule("30 9 * * *")
-  .onRun(async () => {
+export const sendMorningFocusCompanion = functions.pubsub.schedule("30 9 * * *").onRun(async () => {
     functions.logger.info("Sending focus companion");
     await sendFocusCompanion();
   });
 
-export const sendDailyGroupDigests = functions.scheduler
-  .onSchedule("0 19 * * *")
-  .onRun(async () => {
+export const sendDailyGroupDigests = functions.pubsub.schedule("0 19 * * *").onRun(async () => {
     functions.logger.info("Sending group digests");
     await sendGroupDigests();
   });
@@ -222,7 +210,7 @@ export const recordSessionEnd = functions.https.onCall(async (request) => {
   if (!request.auth) throw new functions.https.HttpsError("unauthenticated", "Must be signed in");
 
   const uid = request.auth.uid;
-  const { xpEarned, sessionType } = request.data as {
+  const { xpEarned } = request.data as {
     xpEarned: number;
     sessionType: string;
   };
