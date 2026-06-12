@@ -8,6 +8,7 @@ import '../../widgets/common/progress_bar.dart';
 import '../../widgets/gamification/xp_burst.dart';
 import '../reader/reader_screen.dart';
 import '../../app.dart';
+import 'spark_session_screen.dart';
 
 enum SessionLength { spark, short, deep }
 
@@ -67,17 +68,14 @@ class _QuestScreenState extends ConsumerState<QuestScreen> {
         SessionLength.deep => XpRewards.completeDeepSession,
       };
 
-  void _startSession() {
-    final uid = ref.read(authStreamProvider).valueOrNull?.uid ?? '';
+void _startSession() {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => const ReaderScreen(
-          book: 'rom',
-          chapter: 8,
-          startVerse: 28,
+        builder: (_) => const SparkSessionScreen(
+          passageId: 'rom_8_28',
+          reference: 'Romans 8:28',
           version: 'kjv',
-          uid: '',
         ),
       ),
     );

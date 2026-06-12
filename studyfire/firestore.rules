@@ -41,9 +41,12 @@ service cloud.firestore {
     }
 
     // ── Spark cache (read-only) ───────────────────────────────────────────────
-    match /sparkcache/{date}/{passageId}/{version} {
+   match /sparkcache/{date} {
       allow read: if isSignedIn();
-      allow write: if false;
+      match /{passageId}/{version} {
+        allow read: if isSignedIn();
+        allow write: if false;
+      }
     }
 
     // ── Daily cache (read-only) ───────────────────────────────────────────────
