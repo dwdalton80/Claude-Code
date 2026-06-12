@@ -1,4 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
+import 'package:firebase_storage/firebase_storage.dart';
+import '../../app.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/services/auth_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -16,7 +20,29 @@ class ProfileScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // TODO: wire to user profile provider
+    final user = FirebaseAuth.instance.currentUser;
+    final profileAsync = ref.watch(currentProfileProvider);
+
+    final name = user?.displayName ?? user?.email?.split('@')[0] ?? 'Friend';
+    final avatarUrl = user?.photoURL;
+
+    return profileAsync.when(
+      loading: () => const Scaffold(
+        backgroundColor: Color(0xFF0F1120),
+        body: Center(child: CircularProgressIndicator()),
+      ),
+      error: (_, __) => _buildScaffold(context, ref, name, avatarUrl, null),
+      data: (profile) => _buildScaffold(context, ref, name, avatarUrl, profile),
+    );
+  }
+
+  Widget _buildScaffold(BuildContext context, WidgetRef ref, String name, String? avatarUrl, dynamic profile) {
+    final xp = profile?.xp ?? 0;
+    final levelData = LevelThresholds.forXp(xp);
+    final levelName = levelData['name'] as String? ?? 'Spark';
+    final nextXp = LevelThresholds.nextThreshold(xp) ?? xp + 500;
+    final streak = profile?.streak ?? 0;
+
     return Scaffold(
       backgroundColor: AppColors.deepSlate,
       body: CustomScrollView(
@@ -26,19 +52,19 @@ class ProfileScreen extends ConsumerWidget {
             pinned: true,
             flexibleSpace: FlexibleSpaceBar(
               background: _HeroSection(
-                name: 'Alex',
-                levelName: 'Scribe',
-                xp: 1850,
-                nextLevelXp: 3500,
-                avatarUrl: null,
+                name: name,
+                levelName: levelName,
+                xp: xp,
+                nextLevelXp: nextXp,
+                avatarUrl: avatarUrl,
               ),
             ),
           ),
           SliverToBoxAdapter(
             child: _StatsRow(
-              currentStreak: 12,
-              longestStreak: 30,
-              totalStudyDays: 45,
+              currentStreak: streak,
+              longestStreak: profile?.longestStreak ?? 0,
+              totalStudyDays: profile?.totalStudyDays ?? 0,
             ),
           ),
           const SliverToBoxAdapter(child: _SectionDivider()),
@@ -52,11 +78,11 @@ class ProfileScreen extends ConsumerWidget {
           const SliverToBoxAdapter(child: _SectionDivider()),
           SliverToBoxAdapter(
             child: _StudyStats(
-              totalVerses: 342,
-              wordsExplored: 28,
-              questionsAnswered: 89,
-              journalEntries: 15,
-              versesMemorized: 7,
+              totalVerses: 0,
+              wordsExplored: 0,
+              questionsAnswered: 0,
+              journalEntries: 0,
+              versesMemorized: 0,
             ),
           ),
           const SliverToBoxAdapter(child: SizedBox(height: 80)),
@@ -96,13 +122,33 @@ class _HeroSection extends StatelessWidget {
         children: [
           Row(
             children: [
-              CircleAvatar(
-                radius: 32,
-                backgroundColor: AppColors.surface,
-                backgroundImage: avatarUrl != null ? NetworkImage(avatarUrl!) : null,
-                child: avatarUrl == null
-                    ? Text(name[0], style: AppTypography.displaySmall.copyWith(fontSize: 28))
-                    : null,
+              GestureDetector(
+                onTap: () => _pickAvatar(context),
+                child: Stack(
+                  children: [
+                    CircleAvatar(
+                      radius: 32,
+                      backgroundColor: AppColors.surface,
+                      backgroundImage: avatarUrl != null ? NetworkImage(avatarUrl!) : null,
+                      child: avatarUrl == null
+                          ? Text(name[0], style: AppTypography.displaySmall.copyWith(fontSize: 28))
+                          : null,
+                    ),
+                    Positioned(
+                      bottom: 0,
+                      right: 0,
+                      child: Container(
+                        width: 20,
+                        height: 20,
+                        decoration: const BoxDecoration(
+                          color: AppColors.warmGold,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.edit, size: 12, color: Colors.white),
+                      ),
+                    ),
+                  ],
+                ),
               ),
               const SizedBox(width: 16),
               Expanded(
@@ -144,6 +190,28 @@ class _HeroSection extends StatelessWidget {
     if (next == null) return 'Max Level';
     final nextData = LevelThresholds.forXp(next);
     return nextData['name'] as String;
+  }
+
+  void _pickAvatar(BuildContext context) async {
+    final picker = ImagePicker();
+    final image = await picker.pickImage(source: ImageSource.gallery, imageQuality: 80);
+    if (image == null) return;
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+      final file = File(image.path);
+      final ref = FirebaseStorage.instance.ref('avatars/${user.uid}.jpg');
+      await ref.putFile(file);
+      final url = await ref.getDownloadURL();
+      await user.updatePhotoURL(url);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Profile photo updated!')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to update photo: $e')),
+      );
+    }
   }
 
   void _showSettings(BuildContext context) {
