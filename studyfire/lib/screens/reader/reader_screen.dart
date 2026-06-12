@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
@@ -102,6 +103,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     _xpService.accumulateXp(widget.uid, XpRewards.openAppDaily);
   }
 
+  Future<void> _loadNotes() async {
+    final notes = await _db.loadNotes(widget.uid);
+    if (mounted) setState(() => _notes.addAll(notes));
+  }
+
   void _enterFocusMode() {
     setState(() {
       _focusMode = true;
@@ -174,6 +180,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
               height: 44,
               onPressed: () {
                 if (mounted) setState(() => _notes[verse.id] = ctrl.text);
+                _db.saveNote(
+                  uid: widget.uid,
+                  verseId: verse.id,
+                  note: ctrl.text,
+                  reference: verse.reference,
+                );
                 Navigator.pop(context);
               },
             ),
@@ -321,7 +333,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                         book: _currentBook,
                         chapter: _currentChapter,
                         version: _currentVersion,
-                        onBack: () => Navigator.pop(context),
+                        onBack: () { if (context.canPop()) context.pop(); },
                         onTitleTap: _showChapterPicker,
                         onSearch: _showSearchSheet,
                         onVersionTap: _showVersionPicker,

@@ -17,10 +17,13 @@ async function generateSermonDebrief(ctx) {
     const response = await client.messages.create({
         model: client_1.MODELS.haiku,
         max_tokens: 1000,
+        system: "You are a Bible study assistant. You ALWAYS respond with valid JSON only. Never include any text outside the JSON object. Never explain or add commentary.",
         messages: [
             {
                 role: "user",
-                content: `You are helping a user process and apply what they heard at church or studied in the Bible.
+                content: `A user is studying the Bible and needs help processing their notes. Return ONLY a JSON object with no other text.
+
+You are helping a user process and apply what they heard at church or studied in the Bible.
 
 ${ctx.sermonTitle ? `Sermon: "${ctx.sermonTitle}"` : ""}
 ${ctx.speaker ? `Speaker: ${ctx.speaker}` : ""}
@@ -60,7 +63,20 @@ Application points must be:
         ],
     });
     const text = response.content[0].text.trim();
-    const json = text.replace(/^```json\n?/, "").replace(/\n?```$/, "").trim();
+    // Extract JSON - handle markdown code blocks and extra text
+    let json = text;
+    const codeBlockMatch = text.match(/```(?:json)?\n?([\s\S]*?)\n?```/);
+    if (codeBlockMatch) {
+        json = codeBlockMatch[1].trim();
+    }
+    else {
+        // Find first { and last } to extract JSON object
+        const start = text.indexOf("{");
+        const end = text.lastIndexOf("}");
+        if (start !== -1 && end !== -1) {
+            json = text.substring(start, end + 1);
+        }
+    }
     return JSON.parse(json);
 }
 /**

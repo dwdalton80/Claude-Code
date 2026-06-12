@@ -6,7 +6,7 @@ import '../../core/constants/xp_rewards.dart';
 import '../../widgets/common/flame_cta_button.dart';
 import '../../widgets/common/progress_bar.dart';
 import '../../widgets/gamification/xp_burst.dart';
-import '../reader/reader_screen.dart';
+import 'package:go_router/go_router.dart';
 import '../../app.dart';
 import 'spark_session_screen.dart';
 
@@ -94,18 +94,11 @@ void _startSession() {
     ];
     final pick = options[DateTime.now().millisecond % options.length];
     final uid = ref.read(authStreamProvider).valueOrNull?.uid ?? '';
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ReaderScreen(
-          book: pick[0] as String,
-          chapter: pick[1] as int,
-          startVerse: pick[2] as int,
-          version: 'kjv',
-          uid: uid,
-        ),
-      ),
-    );
+    context.push('/reader', extra: {
+      'book': pick[0] as String,
+      'chapter': pick[1] as int,
+      'version': 'kjv',
+    });
   }
 }
 

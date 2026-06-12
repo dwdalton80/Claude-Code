@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/colors.dart';
 import '../../core/constants/typography.dart';
@@ -93,16 +95,76 @@ class _FilterChipsState extends State<_FilterChips> {
   }
 }
 
-class _JournalList extends StatelessWidget {
+class _JournalList extends StatefulWidget {
   const _JournalList();
 
   @override
+  State<_JournalList> createState() => _JournalListState();
+}
+
+class _JournalListState extends State<_JournalList> {
+  List<JournalEntry> _entries = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (uid.isEmpty) { setState(() => _loading = false); return; }
+    final entries = await FirestoreService().getJournalEntries(uid);
+    if (mounted) setState(() { _entries = entries; _loading = false; });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    // TODO: wire to Firestore stream provider
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      itemCount: 0,
-      itemBuilder: (_, i) => const SizedBox.shrink(),
+    if (_loading) return const Center(child: CircularProgressIndicator());
+    if (_entries.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Text('📝', style: TextStyle(fontSize: 48)),
+            const SizedBox(height: 16),
+            Text('No notes yet', style: AppTypography.bodyLarge),
+            const SizedBox(height: 8),
+            Text('Tap + to create your first note', style: AppTypography.bodySmall),
+          ],
+        ),
+      );
+    }
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: ListView.builder(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        itemCount: _entries.length,
+        itemBuilder: (_, i) {
+          final e = _entries[i];
+          return Card(
+            color: AppColors.cardDark,
+            margin: const EdgeInsets.only(bottom: 12),
+            child: ListTile(
+              title: Text(e.title, style: AppTypography.labelMedium),
+              subtitle: Text(
+                e.content.substring(0, e.content.length.clamp(0, 80)),
+                style: AppTypography.bodySmall,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              trailing: Text(
+                '${e.date.month}/${e.date.day}/${e.date.year}',
+                style: AppTypography.bodySmall,
+              ),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => NoteEditorScreen(entry: e)),
+              ).then((_) => _load()),
+            ),
+          );
+        },
+      ),
     );
   }
 }
@@ -158,8 +220,6 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
       _type = e.type;
       _date = e.date;
     }
-    // Auto-save on content change
-    _contentCtrl.addListener(_autoSave);
   }
 
   @override
@@ -170,16 +230,32 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     super.dispose();
   }
 
-  void _autoSave() {
-    // Debounce: save after 500ms of inactivity
-    Future.delayed(const Duration(milliseconds: 500), () {
-      if (mounted && _contentCtrl.text.isNotEmpty) _save();
-    });
-  }
-
   Future<void> _save() async {
-    // TODO: save to Firestore
-    setState(() => _saved = true);
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (uid.isEmpty || _contentCtrl.text.trim().isEmpty) return;
+    final db = FirestoreService();
+    final now = DateTime.now();
+    final entry = JournalEntry(
+      id: widget.entry?.id ?? '',
+      title: _titleCtrl.text.trim().isEmpty
+          ? _contentCtrl.text.trim().substring(0, _contentCtrl.text.trim().length.clamp(0, 40))
+          : _titleCtrl.text.trim(),
+      content: _contentCtrl.text.trim(),
+      type: _type,
+      date: _date,
+      speaker: _speakerCtrl.text.trim().isEmpty ? null : _speakerCtrl.text.trim(),
+      scriptureRefs: _scriptureRefs,
+      aiApplicationPoints: widget.entry?.aiApplicationPoints ?? [],
+      aiDiscussionQuestions: widget.entry?.aiDiscussionQuestions ?? [],
+      aiBigIdea: widget.entry?.aiBigIdea,
+      aiPersonalChallenge: widget.entry?.aiPersonalChallenge,
+      aiDebriefGenerated: widget.entry?.aiDebriefGenerated ?? false,
+      aiDebriefUsedThisMonth: widget.entry?.aiDebriefUsedThisMonth ?? 0,
+      createdAt: widget.entry?.createdAt ?? now,
+      updatedAt: now,
+    );
+    await db.saveJournalEntry(uid, entry);
+    if (mounted) setState(() => _saved = true);
   }
 
   @override
@@ -189,14 +265,15 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
       appBar: AppBar(
         title: Text(_type == JournalType.sermon ? 'Sermon Notes' : 'Study Notes'),
         actions: [
-          if (_saved)
-            Padding(
-              padding: const EdgeInsets.only(right: 16),
-              child: Text(
-                'Saved',
-                style: AppTypography.bodySmall.copyWith(color: AppColors.emerald),
+          TextButton(
+            onPressed: _save,
+            child: Text(
+              _saved ? 'Saved ✓' : 'Save',
+              style: AppTypography.bodyMedium.copyWith(
+                color: _saved ? AppColors.emerald : AppColors.warmGold,
               ),
             ),
+          ),
         ],
       ),
       body: SingleChildScrollView(
@@ -301,8 +378,83 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     // Show scripture search bottom sheet
   }
 
-  void _unpackThis() {
-    // Call Cloud Function — check free/premium limit
+  void _unpackThis() async {
+    if (_contentCtrl.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Add some notes first')),
+      );
+      return;
+    }
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+    try {
+      final fn = FirebaseFunctions.instanceFor(region: 'us-central1').httpsCallable(
+        'generateDebrief',
+        options: HttpsCallableOptions(timeout: const Duration(seconds: 30)),
+      );
+      final result = await fn.call({
+        'noteContent': _contentCtrl.text.trim(),
+        'sermonTitle': _titleCtrl.text.trim(),
+        'speaker': _speakerCtrl.text.trim(),
+        'scriptureRefs': _scriptureRefs,
+        'studyLevel': 'intermediate',
+      });
+      if (mounted) Navigator.pop(context);
+      final data = result.data as Map<String, dynamic>;
+      if (mounted) {
+        showModalBottomSheet(
+          context: context,
+          backgroundColor: AppColors.cardDark,
+          isScrollControlled: true,
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          builder: (_) => DraggableScrollableSheet(
+            expand: false,
+            initialChildSize: 0.7,
+            builder: (_, ctrl) => SingleChildScrollView(
+              controller: ctrl,
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('✨ AI Debrief', style: AppTypography.labelLarge.copyWith(color: AppColors.warmGold)),
+                  const SizedBox(height: 16),
+                  if (data['bigIdea'] != null) ...[
+                    Text('Big Idea', style: AppTypography.labelSmall.copyWith(color: AppColors.textSecondary)),
+                    const SizedBox(height: 4),
+                    Text(data['bigIdea'] as String, style: AppTypography.bodyLarge),
+                    const SizedBox(height: 16),
+                  ],
+                  if (data['applicationPoints'] != null) ...[
+                    Text('Apply This Week', style: AppTypography.labelSmall.copyWith(color: AppColors.textSecondary)),
+                    const SizedBox(height: 4),
+                    ...(data['applicationPoints'] as List).map((p) => Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('• ', style: TextStyle(color: AppColors.warmGold)),
+                          Expanded(child: Text(p as String, style: AppTypography.bodyMedium)),
+                        ],
+                      ),
+                    )),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) Navigator.pop(context);
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: ${e.toString()}')),
+      );
+    }
   }
 
   String _formatDate(DateTime dt) {

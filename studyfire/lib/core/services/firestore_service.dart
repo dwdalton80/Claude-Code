@@ -78,8 +78,8 @@ class FirestoreService {
         .collection('verses')
         .orderBy('verseNumber');
 
-    if (startVerse != null) query = query.where('verseNum', isGreaterThanOrEqualTo: startVerse);
-    if (endVerse != null) query = query.where('verseNum', isLessThanOrEqualTo: endVerse);
+    if (startVerse != null) query = query.where('verseNumber', isGreaterThanOrEqualTo: startVerse);
+    if (endVerse != null) query = query.where('verseNumber', isLessThanOrEqualTo: endVerse);
 
     final snap = await query.get();
     return snap.docs.map((d) => BibleVerse.fromFirestore(d)).toList();
@@ -155,6 +155,35 @@ class FirestoreService {
     });
   }
 
+  Future<void> saveNote({
+    required String uid,
+    required String verseId,
+    required String note,
+    required String reference,
+  }) async {
+    await _db
+        .collection('notes')
+        .doc(uid)
+        .collection('verses')
+        .doc(verseId)
+        .set({
+      'note': note,
+      'reference': reference,
+      'timestamp': FieldValue.serverTimestamp(),
+    });
+  }
+
+  Future<Map<String, String>> loadNotes(String uid) async {
+    final snap = await _db
+        .collection('notes')
+        .doc(uid)
+        .collection('verses')
+        .get();
+    return Map.fromEntries(
+      snap.docs.map((d) => MapEntry(d.id, d.data()['note'] as String? ?? '')),
+    );
+  }
+
   Future<void> removeHighlight(String uid, String verseId) async {
     await _db.collection('highlights').doc(uid).collection('verses').doc(verseId).delete();
   }
@@ -173,6 +202,25 @@ class FirestoreService {
         .orderBy('date', descending: true)
         .snapshots()
         .map((s) => s.docs.map(JournalEntry.fromFirestore).toList());
+  }
+
+  Future<void> deleteJournalEntry(String uid, String entryId) async {
+    await _db
+        .collection('journal')
+        .doc(uid)
+        .collection('entries')
+        .doc(entryId)
+        .delete();
+  }
+
+  Future<List<JournalEntry>> getJournalEntries(String uid) async {
+    final snap = await _db
+        .collection('journal')
+        .doc(uid)
+        .collection('entries')
+        .orderBy('updatedAt', descending: true)
+        .get();
+    return snap.docs.map((d) => JournalEntry.fromFirestore(d)).toList();
   }
 
   Future<String> saveJournalEntry(String uid, JournalEntry entry) async {
@@ -490,9 +538,9 @@ class BibleVerse {
       id: doc.id,
       reference: data['reference'] ?? '',
       text: data['text'] ?? '',
-      verseNum: data['verseNum'] ?? 0,
-      book: data['book'] ?? '',
-      chapter: data['chapter'] ?? 0,
+      verseNum: data['verseNumber'] ?? 0,
+      book: data['bookId'] ?? '',
+      chapter: data['chapterNumber'] ?? 0,
     );
   }
 }

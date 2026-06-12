@@ -138,20 +138,7 @@ exports.getAiStudy = functions.https.onCall(async (request) => {
             return cacheData.study;
         }
     }
-    // Check rate limit for free users
-    const userSnap = await db.collection("users").doc(uid).get();
-    const profile = userSnap.data()?.profile;
-    const isPremium = profile?.isPremium;
-    if (!isPremium) {
-        const today = dateKey(new Date());
-        const usageRef = db.collection("users").doc(uid).collection("aiUsage").doc(today);
-        const usage = await usageRef.get();
-        const questionsUsed = usage.data()?.questionsUsed ?? 0;
-        if (questionsUsed >= 1) {
-            throw new functions.https.HttpsError("resource-exhausted", "Free limit: 1 AI question per day. Upgrade to Premium for unlimited.");
-        }
-        await usageRef.set({ questionsUsed: admin.firestore.FieldValue.increment(1) }, { merge: true });
-    }
+    // TODO: re-enable premium check after RevenueCat setup
     const study = await (0, ai_study_1.generateAiStudy)(data);
     // Cache the result
     await cacheRef.set({
@@ -162,25 +149,24 @@ exports.getAiStudy = functions.https.onCall(async (request) => {
 });
 // ── HTTPS Callable: Sermon Debrief ────────────────────────────────────────────
 exports.generateDebrief = functions.https.onCall(async (request) => {
-    if (!request.auth)
-        throw new functions.https.HttpsError("unauthenticated", "Must be signed in");
-    const uid = request.auth.uid;
-    const data = request.data;
-    // Check usage limit for free users
-    const userSnap = await db.collection("users").doc(uid).get();
-    const profile = userSnap.data()?.profile;
-    const isPremium = profile?.isPremium;
-    if (!isPremium) {
-        const monthKey = monthKeyStr(new Date());
-        const usageRef = db.collection("users").doc(uid).collection("debriefUsage").doc(monthKey);
-        const usage = await usageRef.get();
-        const used = usage.data()?.count ?? 0;
-        if (used >= 1) {
-            throw new functions.https.HttpsError("resource-exhausted", "Free limit: 1 AI debrief per month. Upgrade to Premium for unlimited.");
-        }
-        await usageRef.set({ count: admin.firestore.FieldValue.increment(1) }, { merge: true });
+    functions.logger.info("generateDebrief called", JSON.stringify({ data: request.data }));
+    try {
+        const raw = request.data ?? request.body?.data ?? {};
+        const data = {
+            noteContent: raw.noteContent ?? "",
+            sermonTitle: raw.sermonTitle,
+            speaker: raw.speaker,
+            scriptureRefs: raw.scriptureRefs ?? [],
+            studyLevel: raw.studyLevel ?? "growing",
+        };
+        const result = await (0, sermon_debrief_1.generateSermonDebrief)(data);
+        functions.logger.info("generateDebrief success");
+        return result;
     }
-    return (0, sermon_debrief_1.generateSermonDebrief)(data);
+    catch (err) {
+        functions.logger.error("generateDebrief error", err);
+        throw err;
+    }
 });
 // ── HTTPS Callable: Suggest Sermon Title ─────────────────────────────────────
 exports.suggestTitle = functions.https.onCall(async (request) => {
@@ -281,9 +267,6 @@ exports.registerFcmToken = functions.https.onCall(async (request) => {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function dateKey(d) {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-function monthKeyStr(d) {
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 const XP_LEVELS = [
     { level: 1, xp: 0 },

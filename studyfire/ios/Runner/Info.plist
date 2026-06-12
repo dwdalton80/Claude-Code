@@ -28,18 +28,20 @@
 	<key>MinimumOSVersion</key>
 	<string>16.0</string>
 
-	<!-- ── Orientation (portrait only) ──────────────────────────────────────── -->
+	<!-- ── Orientation ──────────────────────────────────────────────────────── -->
 	<key>UISupportedInterfaceOrientations</key>
-        <array>
-               <string>UIInterfaceOrientationPortrait</string>
-               <string>UIInterfaceOrientationPortraitUpsideDown</string>
-               <string>UIInterfaceOrientationLandscapeLeft</string>
-               <string>UIInterfaceOrientationLandscapeRight</string>
-        </array>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
 		<string>UIInterfaceOrientationPortraitUpsideDown</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 
 	<!-- ── Status Bar ────────────────────────────────────────────────────────── -->
@@ -82,7 +84,6 @@
 	</dict>
 
 	<!-- ── Google Sign-In URL scheme ─────────────────────────────────────────── -->
-	<!-- Replace REVERSED_CLIENT_ID with the value from GoogleService-Info.plist -->
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
