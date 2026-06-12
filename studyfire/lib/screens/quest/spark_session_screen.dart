@@ -127,6 +127,7 @@ class _SparkSessionScreenState extends ConsumerState<SparkSessionScreen>
     final uid = ref.read(authStreamProvider).valueOrNull?.uid ?? '';
     if (uid.isNotEmpty) {
       _xpService.accumulateXp(uid, XpRewards.completeSparkSession);
+      _xpService.flushSession(uid);
       if (_responseController.text.trim().isNotEmpty) {
         await _firestore.collection('journal').doc(uid).collection('entries').add({
           'type': 'spark',

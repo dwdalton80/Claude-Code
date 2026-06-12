@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/colors.dart';
 import '../../core/constants/typography.dart';
@@ -23,6 +24,7 @@ class QuestScreen extends ConsumerStatefulWidget {
 class _QuestScreenState extends ConsumerState<QuestScreen> {
   SessionLength _sessionLength = SessionLength.spark;
   String _passage = 'Romans 8:28';
+  StreamSubscription? _profileSub;
   String _passageId = 'rom_8_28';
   int _streak = 0;
   int _dailyXp = 0;
@@ -74,18 +76,23 @@ class _QuestScreenState extends ConsumerState<QuestScreen> {
     }
   }
 
-  Future<void> _loadUserStats() async {
+  void _loadUserStats() {
     final uid = ref.read(authStreamProvider).valueOrNull?.uid ?? '';
     if (uid.isEmpty) return;
-    final snap = await FirebaseFirestore.instance.collection('users').doc(uid).get();
-    if (snap.exists && mounted) {
-      final data = snap.data()!;
-      final profile = data['profile'] as Map<String, dynamic>? ?? {};
-      setState(() {
-        _streak = profile['streak'] as int? ?? 0;
-        _dailyXp = profile['xp'] as int? ?? 0;
-      });
-    }
+    _profileSub = FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .snapshots()
+        .listen((snap) {
+      if (snap.exists && mounted) {
+        final data = snap.data()!;
+        final profile = data['profile'] as Map<String, dynamic>? ?? {};
+        setState(() {
+          _streak = profile['streak'] as int? ?? 0;
+          _dailyXp = profile['xp'] as int? ?? 0;
+        });
+      }
+    });
   }
 
   @override
