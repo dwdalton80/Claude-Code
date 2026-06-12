@@ -76,9 +76,8 @@ class _QuizScreenState extends ConsumerState<QuizScreen> {
 
   Future<void> _loadQuestions() async {
     setState(() => _loading = true);
-    // TODO: load from dailycache/{date}/quizQuestions or Cloud Function
     await Future.delayed(const Duration(milliseconds: 600));
-    _questions = [
+    final allQuestions = [
       const QuizQuestion(
         type: QuestionType.multipleChoice,
         question: 'In Romans 8:28, Paul says God works all things together for good for those who…',
@@ -128,6 +127,12 @@ class _QuizScreenState extends ConsumerState<QuizScreen> {
         passageRef: '1 Peter 5:7',
       ),
     ];
+    // Filter by topic if specified
+    _questions = widget.topicTag != null
+        ? allQuestions.where((q) => q.topicTag == widget.topicTag).toList()
+        : allQuestions;
+    // If no questions for topic, show all
+    if (_questions.isEmpty) _questions = allQuestions;
     setState(() => _loading = false);
   }
 
