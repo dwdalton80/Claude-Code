@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -75,6 +76,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     _currentChapter = widget.chapter;
     _currentBook = widget.book;
     _loadVerses();
+    _loadHighlights();
+    _loadNotes();
 
     Future.delayed(const Duration(seconds: 2), () {
       if (mounted) _enterFocusMode();
@@ -101,6 +104,28 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
       _loading = false;
     });
     _xpService.accumulateXp(widget.uid, XpRewards.openAppDaily);
+  }
+
+  Future<void> _loadHighlights() async {
+    if (widget.uid.isEmpty) return;
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('highlights')
+          .doc(widget.uid)
+          .collection('verses')
+          .get();
+      if (!mounted) return;
+      final highlights = Map<String, String>.fromEntries(
+        snap.docs.map((d) {
+          final data = d.data();
+          return MapEntry(d.id, data['color'] as String? ?? '');
+        }),
+      );
+      debugPrint('Loaded highlights: ${highlights.length} items');
+      setState(() => _highlights.addAll(highlights));
+    } catch (e) {
+      debugPrint('Error loading highlights: $e');
+    }
   }
 
   Future<void> _loadNotes() async {
@@ -206,8 +231,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
         verse: verse,
         highlights: _highlights,
         onHighlight: (color) {
-          if (mounted) setState(() => _highlights[verse.id] = color.name);
-          _db.saveHighlight(uid: widget.uid, verseId: verse.id, color: color.name);
+          final verseKey = '${_currentBook}_${_currentChapter}_${verse.id}';
+          if (mounted) setState(() => _highlights[verseKey] = color.name);
+          _db.saveHighlight(uid: widget.uid, verseId: verseKey, color: color.name);
           Navigator.pop(context);
         },
         onCopy: () {
@@ -452,7 +478,12 @@ class _VerseList extends StatelessWidget {
       itemCount: verses.length,
       itemBuilder: (_, i) {
         final verse = verses[i];
-        final highlightColor = _highlightColors[highlights[verse.id]];
+        // Look up highlight using book_chapter_verseId key
+        final verseKey = highlights.keys
+            .where((k) => k.endsWith('_${verse.id}'))
+            .firstOrNull;
+        final highlightColor = _highlightColors[
+            verseKey != null ? highlights[verseKey] : highlights[verse.id]];
         final hasNote = notes.containsKey(verse.id);
 
         return GestureDetector(
@@ -651,49 +682,51 @@ class _VerseActionSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(verse.reference,
-              style: AppTypography.labelSmall.copyWith(color: AppColors.warmGold)),
-          const SizedBox(height: 6),
-          Text(
-            '"${verse.text.length > 100 ? '${verse.text.substring(0, 97)}…' : verse.text}"',
-            style: AppTypography.bodySmall.copyWith(fontStyle: FontStyle.italic),
-          ),
-          const SizedBox(height: 20),
-          Row(
-            children: [
-              Text('Highlight:', style: AppTypography.labelSmall),
-              const SizedBox(width: 12),
-              ...HighlightColor.values.map((c) => GestureDetector(
-                    onTap: () => onHighlight(c),
-                    child: Container(
-                      width: 28,
-                      height: 28,
-                      margin: const EdgeInsets.only(right: 8),
-                      decoration: BoxDecoration(
-                        color: c.color,
-                        shape: BoxShape.circle,
-                        border: highlights[verse.id] == c.name
-                            ? Border.all(color: Colors.white, width: 2)
-                            : null,
+    return SingleChildScrollView(
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(context).padding.bottom + 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(verse.reference,
+                style: AppTypography.labelSmall.copyWith(color: AppColors.warmGold)),
+            const SizedBox(height: 6),
+            Text(
+              '"${verse.text.length > 100 ? '${verse.text.substring(0, 97)}…' : verse.text}"',
+              style: AppTypography.bodySmall.copyWith(fontStyle: FontStyle.italic),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Text('Highlight:', style: AppTypography.labelSmall),
+                const SizedBox(width: 12),
+                ...HighlightColor.values.map((c) => GestureDetector(
+                      onTap: () => onHighlight(c),
+                      child: Container(
+                        width: 28,
+                        height: 28,
+                        margin: const EdgeInsets.only(right: 8),
+                        decoration: BoxDecoration(
+                          color: c.color,
+                          shape: BoxShape.circle,
+                          border: highlights.values.contains(c.name)
+                              ? Border.all(color: Colors.white, width: 2)
+                              : null,
+                        ),
                       ),
-                    ),
-                  )),
-            ],
-          ),
-          const Divider(height: 24),
-          _ActionTile(icon: Icons.copy_outlined, label: 'Copy', onTap: onCopy),
-          _ActionTile(icon: Icons.share_outlined, label: 'Share  +${XpRewards.shareVerse} XP', onTap: onShare),
-          _ActionTile(icon: Icons.sticky_note_2_outlined, label: 'Add to Journal', onTap: onAddToJournal),
-          _ActionTile(icon: Icons.auto_stories, label: 'Word of the Day', onTap: onWordOfDay),
-          _ActionTile(icon: Icons.psychology, label: 'Ask AI', onTap: onAskAi),
-          _ActionTile(icon: Icons.layers_outlined, label: 'Add to Memory Verse', onTap: onAddToMemory),
-        ],
+                    )),
+              ],
+            ),
+            const Divider(height: 24),
+            _ActionTile(icon: Icons.copy_outlined, label: 'Copy', onTap: onCopy),
+            _ActionTile(icon: Icons.share_outlined, label: 'Share  +${XpRewards.shareVerse} XP', onTap: onShare),
+            _ActionTile(icon: Icons.sticky_note_2_outlined, label: 'Add to Journal', onTap: onAddToJournal),
+            _ActionTile(icon: Icons.auto_stories, label: 'Word of the Day', onTap: onWordOfDay),
+            _ActionTile(icon: Icons.psychology, label: 'Ask AI', onTap: onAskAi),
+            _ActionTile(icon: Icons.layers_outlined, label: 'Add to Memory Verse', onTap: onAddToMemory),
+          ],
+        ),
       ),
     );
   }
@@ -874,7 +907,8 @@ class _BrowseTab extends StatefulWidget {
 
 class _BrowseTabState extends State<_BrowseTab> {
   String? _selectedBook;
-String _bookNameToId(String name) {
+
+  String _bookNameToId(String name) {
     const map = {
       'Genesis': 'gen', 'Exodus': 'exo', 'Leviticus': 'lev', 'Numbers': 'num',
       'Deuteronomy': 'deu', 'Joshua': 'jos', 'Judges': 'jdg', 'Ruth': 'rut',
