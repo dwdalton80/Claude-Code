@@ -7,6 +7,7 @@ import 'firebase_options.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'app.dart';
+import 'screens/splash_screen.dart';
 
 // Top-level FCM background handler (required by firebase_messaging)
 @pragma('vm:entry-point')
@@ -67,6 +68,15 @@ void main() async {
           .call({'token': token});
     } catch (_) {}
   });
+
+  // Show splash immediately while app initializes
+  runApp(const MaterialApp(
+    debugShowCheckedModeBanner: false,
+    home: SplashScreen(),
+  ));
+
+  // Wait for minimum splash time + Firebase init
+  await Future.delayed(const Duration(milliseconds: 3000));
 
   runApp(
     const ProviderScope(
