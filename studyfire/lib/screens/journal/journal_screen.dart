@@ -143,24 +143,43 @@ class _JournalListState extends State<_JournalList> {
         itemCount: _entries.length,
         itemBuilder: (_, i) {
           final e = _entries[i];
-          return Card(
-            color: AppColors.cardDark,
-            margin: const EdgeInsets.only(bottom: 12),
-            child: ListTile(
-              title: Text(e.title, style: AppTypography.labelMedium),
-              subtitle: Text(
-                e.content.substring(0, e.content.length.clamp(0, 80)),
-                style: AppTypography.bodySmall,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
+          return Dismissible(
+            key: Key(e.id),
+            direction: DismissDirection.endToStart,
+            background: Container(
+              alignment: Alignment.centerRight,
+              padding: const EdgeInsets.only(right: 20),
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color: Colors.red,
+                borderRadius: BorderRadius.circular(12),
               ),
-              trailing: Text(
-                '${e.date.month}/${e.date.day}/${e.date.year}',
-                style: AppTypography.bodySmall,
+              child: const Icon(Icons.delete, color: Colors.white),
+            ),
+            onDismissed: (_) async {
+              final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+              await FirestoreService().deleteJournalEntry(uid, e.id);
+              setState(() => _entries.removeAt(i));
+            },
+            child: Card(
+              color: AppColors.cardDark,
+              margin: const EdgeInsets.only(bottom: 12),
+              child: ListTile(
+                title: Text(e.title, style: AppTypography.labelMedium),
+                subtitle: Text(
+                  e.content.substring(0, e.content.length.clamp(0, 80)),
+                  style: AppTypography.bodySmall,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                trailing: Text(
+                  '${e.date.month}/${e.date.day}/${e.date.year}',
+                  style: AppTypography.bodySmall,
+                ),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => NoteEditorScreen(entry: e)),
+                ).then((_) => _load()),
               ),
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => NoteEditorScreen(entry: e)),
-              ).then((_) => _load()),
             ),
           );
         },
@@ -385,11 +404,13 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
       );
       return;
     }
+    bool dialogShowing = false;
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (_) => const Center(child: CircularProgressIndicator()),
-    );
+    ).then((_) => dialogShowing = false);
+    dialogShowing = true;
     try {
       final fn = FirebaseFunctions.instanceFor(region: 'us-central1').httpsCallable(
         'generateDebrief',
@@ -402,7 +423,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
         'scriptureRefs': _scriptureRefs,
         'studyLevel': 'intermediate',
       });
-      if (mounted) Navigator.pop(context);
+      if (mounted && dialogShowing) Navigator.of(context, rootNavigator: true).pop();
       final data = result.data as Map<String, dynamic>;
       if (mounted) {
         showModalBottomSheet(
@@ -432,16 +453,19 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
                   if (data['applicationPoints'] != null) ...[
                     Text('Apply This Week', style: AppTypography.labelSmall.copyWith(color: AppColors.textSecondary)),
                     const SizedBox(height: 4),
-                    ...(data['applicationPoints'] as List).map((p) => Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('• ', style: TextStyle(color: AppColors.warmGold)),
-                          Expanded(child: Text(p as String, style: AppTypography.bodyMedium)),
-                        ],
-                      ),
-                    )),
+                    ...(data['applicationPoints'] as List).map((p) {
+                      final text = p is Map ? (p['text'] as String? ?? '') : (p as String? ?? '');
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('• ', style: TextStyle(color: AppColors.warmGold)),
+                            Expanded(child: Text(text, style: AppTypography.bodyMedium)),
+                          ],
+                        ),
+                      );
+                    }),
                   ],
                 ],
               ),
@@ -450,7 +474,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
         );
       }
     } catch (e) {
-      if (mounted) Navigator.pop(context);
+      if (mounted && dialogShowing) Navigator.of(context, rootNavigator: true).pop();
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error: ${e.toString()}')),
       );
