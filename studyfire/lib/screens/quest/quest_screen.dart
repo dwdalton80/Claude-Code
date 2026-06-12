@@ -6,6 +6,8 @@ import '../../core/constants/xp_rewards.dart';
 import '../../widgets/common/flame_cta_button.dart';
 import '../../widgets/common/progress_bar.dart';
 import '../../widgets/gamification/xp_burst.dart';
+import '../reader/reader_screen.dart';
+import '../../app.dart';
 
 enum SessionLength { spark, short, deep }
 
@@ -20,8 +22,7 @@ class _QuestScreenState extends ConsumerState<QuestScreen> {
   SessionLength _sessionLength = SessionLength.spark;
 
   // TODO: wire to Firestore/provider
-  static const _mockPassage = 'Romans 8:28–30';
-  static const _mockXp = 15;
+  static const _mockPassage = 'Romans 8:28';
   static const _streak = 7;
   static const _dailyXp = 45;
   static const _dailyXpGoal = 100;
@@ -49,7 +50,6 @@ class _QuestScreenState extends ConsumerState<QuestScreen> {
                 )),
               ],
             ),
-            // Random Spark FAB
             Positioned(
               right: 20,
               bottom: 80,
@@ -68,11 +68,46 @@ class _QuestScreenState extends ConsumerState<QuestScreen> {
       };
 
   void _startSession() {
-    // Navigate to spark/short/deep session
+    final uid = ref.read(authStreamProvider).valueOrNull?.uid ?? '';
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const ReaderScreen(
+          book: 'rom',
+          chapter: 8,
+          startVerse: 28,
+          version: 'kjv',
+          uid: '',
+        ),
+      ),
+    );
   }
 
   void _randomSpark() {
-    // Randomly assign verse, quiz, or memory verse
+    final options = [
+      ['jhn', 3, 16],
+      ['rom', 8, 28],
+      ['psa', 23, 1],
+      ['php', 4, 13],
+      ['isa', 40, 31],
+      ['jer', 29, 11],
+      ['pro', 3, 5],
+      ['mat', 5, 3],
+    ];
+    final pick = options[DateTime.now().millisecond % options.length];
+    final uid = ref.read(authStreamProvider).valueOrNull?.uid ?? '';
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ReaderScreen(
+          book: pick[0] as String,
+          chapter: pick[1] as int,
+          startVerse: pick[2] as int,
+          version: 'kjv',
+          uid: uid,
+        ),
+      ),
+    );
   }
 }
 
@@ -106,7 +141,6 @@ class _QuestCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Today label
             Row(
               children: [
                 Container(
@@ -132,13 +166,11 @@ class _QuestCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 20),
-            // Passage
             Text(
               passage,
               style: AppTypography.displayMedium,
             ),
             const SizedBox(height: 20),
-            // XP + time row
             Row(
               children: [
                 _XpBadge(xp: xpReward),
@@ -147,13 +179,11 @@ class _QuestCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 20),
-            // Session length toggle
             _SessionToggle(
               selected: sessionLength,
               onChanged: onLengthChanged,
             ),
             const Spacer(),
-            // CTA
             FlameCTAButton(
               label: 'Start Quest  ⚡',
               onPressed: onStart,
