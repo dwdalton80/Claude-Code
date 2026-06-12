@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/services/auth_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/colors.dart';
@@ -164,13 +165,17 @@ class _HeroSection extends StatelessWidget {
               leading: const Icon(Icons.notifications_outlined, color: Colors.white70),
               title: const Text('Notifications', style: TextStyle(color: Colors.white)),
               trailing: const Icon(Icons.chevron_right, color: Colors.white38),
-              onTap: () {},
+              onTap: () async {
+                await launchUrl(Uri.parse('app-settings:'));
+              },
             ),
             ListTile(
               leading: const Icon(Icons.lock_outline, color: Colors.white70),
               title: const Text('Privacy Policy', style: TextStyle(color: Colors.white)),
               trailing: const Icon(Icons.chevron_right, color: Colors.white38),
-              onTap: () {},
+              onTap: () async {
+                await launchUrl(Uri.parse('https://dwdalton80.github.io/studyfire-site'), mode: LaunchMode.externalApplication);
+              },
             ),
             ListTile(
               leading: const Icon(Icons.logout, color: Colors.redAccent),

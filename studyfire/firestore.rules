@@ -35,9 +35,17 @@ service cloud.firestore {
     }
 
     // ── Bible (read-only for all authenticated users) ─────────────────────────
-    match /bible/{version}/{book}/{chapter}/{verse} {
+   match /bible/{version} {
       allow read: if isSignedIn();
-      allow write: if false; // Cloud Functions only
+      match /books/{bookId} {
+        allow read: if isSignedIn();
+        match /chapters/{chapterId} {
+          allow read: if isSignedIn();
+          match /verses/{verseId} {
+            allow read: if isSignedIn();
+          }
+        }
+      }
     }
 
     // ── Spark cache (read-only) ───────────────────────────────────────────────
@@ -92,17 +100,15 @@ service cloud.firestore {
     }
 
     // ── Groups ─────────────────────────────────────────────────────────────────
-    match /groups/{groupId} {
-      allow read: if isSignedIn() &&
-        exists(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid));
+  match /groups/{groupId} {
+      allow read: if isSignedIn();
 
       allow create: if isSignedIn();
       allow update: if isSignedIn() &&
         get(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid)).data.role == 'creator';
 
       match /members/{uid} {
-        allow read: if isSignedIn() &&
-          exists(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid));
+        allow read: if isSignedIn();
         allow write: if isOwner(uid) ||
           get(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid)).data.role == 'creator';
       }

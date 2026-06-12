@@ -246,18 +246,13 @@ class FirestoreService {
 
   Stream<List<Group>> watchMyGroups(String uid) {
     return _db
-        .collectionGroup('members')
-        .where(FieldPath.documentId, isEqualTo: uid)
+        .collection('groups')
+        .where('memberIds', arrayContains: uid)
         .snapshots()
-        .asyncMap((snap) async {
-      final groupIds = snap.docs.map((d) => d.reference.parent.parent!.id).toList();
-      if (groupIds.isEmpty) return [];
-
-      final groups = await Future.wait(
-        groupIds.map((id) => _db.collection('groups').doc(id).get()),
-      );
-      return groups.where((g) => g.exists).map(Group.fromFirestore).toList();
-    });
+        .map((snap) => snap.docs
+            .where((d) => d.exists)
+            .map(Group.fromFirestore)
+            .toList());
   }
 
   Future<Group?> getGroupByInviteCode(String code) async {
