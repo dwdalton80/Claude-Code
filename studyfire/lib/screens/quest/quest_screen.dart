@@ -8,6 +8,7 @@ import '../../widgets/common/progress_bar.dart';
 import '../../widgets/gamification/xp_burst.dart';
 import 'package:go_router/go_router.dart';
 import '../../app.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'spark_session_screen.dart';
 
 enum SessionLength { spark, short, deep }
@@ -21,12 +22,71 @@ class QuestScreen extends ConsumerStatefulWidget {
 
 class _QuestScreenState extends ConsumerState<QuestScreen> {
   SessionLength _sessionLength = SessionLength.spark;
-
-  // TODO: wire to Firestore/provider
-  static const _mockPassage = 'Romans 8:28';
-  static const _streak = 7;
-  static const _dailyXp = 45;
+  String _passage = 'Romans 8:28';
+  String _passageId = 'rom_8_28';
+  int _streak = 0;
+  int _dailyXp = 0;
   static const _dailyXpGoal = 100;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTodaysPassage();
+    _loadUserStats();
+  }
+
+  Future<void> _loadTodaysPassage() async {
+    final today = DateTime.now().toIso8601String().split('T')[0];
+    // Query sparkcache/{today}/{passageId}/kjv document
+    final snap = await FirebaseFirestore.instance
+        .collection('sparkcache')
+        .doc(today)
+        .collection('rom_8_28')
+        .doc('kjv')
+        .get();
+    // Try to find today's passage by checking known passage IDs
+    final knownPassages = ['rom_8_28', 'jhn_3_16', 'psa_23_1', 'jer_29_11', 'php_4_13'];
+    for (final pid in knownPassages) {
+      final doc = await FirebaseFirestore.instance
+          .collection('sparkcache')
+          .doc(today)
+          .collection(pid)
+          .doc('kjv')
+          .get();
+      if (doc.exists && mounted) {
+        final ref = pid.split('_');
+        const bookMap = {
+          'gen': 'Genesis', 'exo': 'Exodus', 'psa': 'Psalms', 'pro': 'Proverbs',
+          'mat': 'Matthew', 'mrk': 'Mark', 'luk': 'Luke', 'jhn': 'John',
+          'act': 'Acts', 'rom': 'Romans', '1co': '1 Corinthians', '2co': '2 Corinthians',
+          'gal': 'Galatians', 'eph': 'Ephesians', 'php': 'Philippians', 'col': 'Colossians',
+          'jer': 'Jeremiah', 'isa': 'Isaiah', 'heb': 'Hebrews', 'jas': 'James',
+        };
+        final book = bookMap[ref[0]] ?? ref[0];
+        final chapter = ref.length > 1 ? ref[1] : '1';
+        final verse = ref.length > 2 ? ref[2] : '1';
+        setState(() {
+          _passageId = pid;
+          _passage = '$book $chapter:$verse';
+        });
+        return;
+      }
+    }
+  }
+
+  Future<void> _loadUserStats() async {
+    final uid = ref.read(authStreamProvider).valueOrNull?.uid ?? '';
+    if (uid.isEmpty) return;
+    final snap = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+    if (snap.exists && mounted) {
+      final data = snap.data()!;
+      final profile = data['profile'] as Map<String, dynamic>? ?? {};
+      setState(() {
+        _streak = profile['streak'] as int? ?? 0;
+        _dailyXp = profile['xp'] as int? ?? 0;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -38,7 +98,7 @@ class _QuestScreenState extends ConsumerState<QuestScreen> {
             Column(
               children: [
                 Expanded(flex: 8, child: _QuestCard(
-                  passage: _mockPassage,
+                  passage: _passage,
                   xpReward: _xpForLength(_sessionLength),
                   sessionLength: _sessionLength,
                   onLengthChanged: (l) => setState(() => _sessionLength = l),
@@ -46,7 +106,7 @@ class _QuestScreenState extends ConsumerState<QuestScreen> {
                 )),
                 Expanded(flex: 2, child: _StatsBar(
                   streak: _streak,
-                  dailyXp: _dailyXp,
+                  dailyXp: _dailyXp % _dailyXpGoal,
                   dailyXpGoal: _dailyXpGoal,
                 )),
               ],
@@ -72,9 +132,9 @@ void _startSession() {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => const SparkSessionScreen(
-          passageId: 'rom_8_28',
-          reference: 'Romans 8:28',
+        builder: (_) => SparkSessionScreen(
+          passageId: _passageId,
+          reference: _passage,
           version: 'kjv',
         ),
       ),
