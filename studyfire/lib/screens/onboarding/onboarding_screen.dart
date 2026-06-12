@@ -102,7 +102,27 @@ class _WelcomeStep extends StatelessWidget {
           const Spacer(flex: 2),
           ScaleTransition(
             scale: flamePulse,
-            child: const Text('🔥', style: TextStyle(fontSize: 80)),
+            child: Container(
+              width: 160,
+              height: 160,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(36),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFFFF6B00).withOpacity(0.5),
+                    blurRadius: 40,
+                    spreadRadius: 10,
+                  ),
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(36),
+                child: Image.asset(
+                  'assets/images/app_icon.png',
+                  fit: BoxFit.cover,
+                ),
+              ),
+            ),
           ),
           const SizedBox(height: 32),
           const Text(

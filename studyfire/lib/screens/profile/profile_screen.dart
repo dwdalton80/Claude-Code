@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/services/auth_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/colors.dart';
 import '../../core/constants/typography.dart';
@@ -6,6 +7,8 @@ import '../../core/constants/xp_rewards.dart';
 import '../../models/user_profile.dart';
 import '../../widgets/common/progress_bar.dart';
 import '../../widgets/gamification/xp_burst.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../../core/services/auth_service.dart';
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
@@ -120,7 +123,7 @@ class _HeroSection extends StatelessWidget {
               ),
               IconButton(
                 icon: const Icon(Icons.settings_outlined, color: AppColors.textSecondary),
-                onPressed: () {},
+                onPressed: () => _showSettings(context),
               ),
             ],
           ),
@@ -141,6 +144,49 @@ class _HeroSection extends StatelessWidget {
     final nextData = LevelThresholds.forXp(next);
     return nextData['name'] as String;
   }
+
+  void _showSettings(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1E2235),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Settings', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white)),
+            const SizedBox(height: 24),
+            ListTile(
+              leading: const Icon(Icons.notifications_outlined, color: Colors.white70),
+              title: const Text('Notifications', style: TextStyle(color: Colors.white)),
+              trailing: const Icon(Icons.chevron_right, color: Colors.white38),
+              onTap: () {},
+            ),
+            ListTile(
+              leading: const Icon(Icons.lock_outline, color: Colors.white70),
+              title: const Text('Privacy Policy', style: TextStyle(color: Colors.white)),
+              trailing: const Icon(Icons.chevron_right, color: Colors.white38),
+              onTap: () {},
+            ),
+            ListTile(
+              leading: const Icon(Icons.logout, color: Colors.redAccent),
+              title: const Text('Sign Out', style: TextStyle(color: Colors.redAccent)),
+              onTap: () async {
+                Navigator.pop(context);
+                await AuthService().signOut();
+              },
+            ),
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
+  }
+
 }
 
 class _StatsRow extends StatelessWidget {
