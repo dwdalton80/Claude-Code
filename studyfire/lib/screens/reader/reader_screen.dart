@@ -11,6 +11,9 @@ import '../../core/services/firestore_service.dart';
 import '../../core/services/xp_service.dart';
 import '../../widgets/common/flame_cta_button.dart';
 import '../../widgets/common/progress_bar.dart';
+import '../journal/journal_screen.dart';
+import '../../models/memory_verse.dart';
+import '../../models/memory_verse.dart';
 
 enum HighlightColor { yellow, green, blue, pink }
 
@@ -159,7 +162,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
 
   void _onVerseTap(BibleVerse verse) {
     _toggleChrome();
-    _showInlineNote(verse);
   }
 
   void _onVerseLongPress(BibleVerse verse) {
@@ -250,13 +252,36 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
         },
         onAddToJournal: () {
           Navigator.pop(context);
+          Navigator.push(context, MaterialPageRoute(
+            builder: (_) => NoteEditorScreen(
+              verseRef: verse.reference,
+              verseText: verse.text,
+            ),
+          ));
         },
         onAskAi: () {
           Navigator.pop(context);
-          _openAiStudy(verse);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('AI Study coming soon for ${verse.reference}')),
+          );
         },
         onAddToMemory: () {
           Navigator.pop(context);
+          final mv = MemoryVerse(
+            id: verse.reference.replaceAll(' ', '_').replaceAll(':', '_'),
+            reference: verse.reference,
+            text: verse.text,
+            currentStage: MemoryVerseStage.stage1,
+            mastered: false,
+            attemptHistory: [],
+            easeFactor: 250,
+            interval: 1,
+            repetitions: 0,
+          );
+          _db.saveMemoryVerse(widget.uid, mv);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Added to Memory Verses!')),
+          );
         },
         onWordOfDay: () {
           Navigator.pop(context);

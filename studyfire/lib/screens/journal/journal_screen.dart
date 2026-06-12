@@ -211,8 +211,10 @@ class _JournalSearch extends SearchDelegate<String> {
 
 class NoteEditorScreen extends ConsumerStatefulWidget {
   final JournalEntry? entry;
+  final String? verseRef;
+  final String? verseText;
 
-  const NoteEditorScreen({super.key, this.entry});
+  const NoteEditorScreen({super.key, this.entry, this.verseRef, this.verseText});
 
   @override
   ConsumerState<NoteEditorScreen> createState() => _NoteEditorScreenState();
@@ -238,6 +240,12 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
       _scriptureRefs.addAll(e.scriptureRefs);
       _type = e.type;
       _date = e.date;
+    } else if (widget.verseRef != null) {
+      _scriptureRefs.add(widget.verseRef!);
+      _type = JournalType.personalStudy;
+      if (widget.verseText != null) {
+        _contentCtrl.text = '"${widget.verseText}"\n\n';
+      }
     }
   }
 
@@ -450,11 +458,12 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
                     Text(data['bigIdea'] as String, style: AppTypography.bodyLarge),
                     const SizedBox(height: 16),
                   ],
-                  if (data['applicationPoints'] != null) ...[
+                  if (data['applicationPoints'] != null && (data['applicationPoints'] as List).isNotEmpty) ...[
                     Text('Apply This Week', style: AppTypography.labelSmall.copyWith(color: AppColors.textSecondary)),
                     const SizedBox(height: 4),
                     ...(data['applicationPoints'] as List).map((p) {
                       final text = p is Map ? (p['text'] as String? ?? '') : (p as String? ?? '');
+                      if (text.isEmpty) return const SizedBox.shrink();
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 8),
                         child: Row(

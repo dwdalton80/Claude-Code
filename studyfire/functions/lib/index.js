@@ -149,15 +149,15 @@ exports.getAiStudy = functions.https.onCall(async (request) => {
 });
 // ── HTTPS Callable: Sermon Debrief ────────────────────────────────────────────
 exports.generateDebrief = functions.https.onCall(async (request) => {
-    functions.logger.info("generateDebrief called", JSON.stringify({ data: request.data }));
+    const raw = request.data ?? request.body?.data ?? request ?? {};
+    functions.logger.info("generateDebrief raw:", JSON.stringify(raw).substring(0, 200));
     try {
-        const raw = request.data ?? request.body?.data ?? {};
         const data = {
-            noteContent: raw.noteContent ?? "",
-            sermonTitle: raw.sermonTitle,
-            speaker: raw.speaker,
-            scriptureRefs: raw.scriptureRefs ?? [],
-            studyLevel: raw.studyLevel ?? "growing",
+            noteContent: raw.noteContent ?? raw.data?.noteContent ?? "",
+            sermonTitle: raw.sermonTitle ?? raw.data?.sermonTitle,
+            speaker: raw.speaker ?? raw.data?.speaker,
+            scriptureRefs: raw.scriptureRefs ?? raw.data?.scriptureRefs ?? [],
+            studyLevel: raw.studyLevel ?? raw.data?.studyLevel ?? "growing",
         };
         const result = await (0, sermon_debrief_1.generateSermonDebrief)(data);
         functions.logger.info("generateDebrief success");
