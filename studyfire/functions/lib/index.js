@@ -33,13 +33,14 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.onStreakMilestone = exports.onMemoryVerseMastered = exports.onBadgeEarned = exports.registerFcmToken = exports.updateMemoryVerse = exports.recordSessionEnd = exports.suggestTitle = exports.generateDebrief = exports.getAiStudy = exports.sendDailyGroupDigests = exports.sendMorningFocusCompanion = exports.sendEveningStreakReminders = exports.weeklyGraceReplenish = exports.generateDailyCache = exports.generateDailySpark = void 0;
+exports.getWordStudy = exports.onStreakMilestone = exports.onMemoryVerseMastered = exports.onBadgeEarned = exports.registerFcmToken = exports.updateMemoryVerse = exports.recordSessionEnd = exports.suggestTitle = exports.generateDebrief = exports.getAiStudy = exports.sendDailyGroupDigests = exports.sendMorningFocusCompanion = exports.sendEveningStreakReminders = exports.weeklyGraceReplenish = exports.generateDailyCache = exports.generateDailySpark = void 0;
 const functions = __importStar(require("firebase-functions/v1"));
 const admin = __importStar(require("firebase-admin"));
 const spark_questions_1 = require("./claude/spark_questions");
 const ai_study_1 = require("./claude/ai_study");
 const quiz_generation_1 = require("./claude/quiz_generation");
 const sermon_debrief_1 = require("./claude/sermon_debrief");
+const client_1 = require("./claude/client");
 const streak_manager_1 = require("./gamification/streak_manager");
 const sm2_algorithm_1 = require("./gamification/sm2_algorithm");
 const push_notifications_1 = require("./notifications/push_notifications");
@@ -429,4 +430,36 @@ async function getTodaysPassages() {
         },
     ];
 }
+// ── HTTPS Callable: Word Study ────────────────────────────────────────────────
+exports.getWordStudy = functions.https.onCall(async (request) => {
+    const raw = request.data ?? request ?? {};
+    const { word, verseRef, verseText } = raw;
+    const client = (0, client_1.getClaudeClient)();
+    const response = await client.messages.create({
+        model: client_1.MODELS.haiku,
+        max_tokens: 600,
+        system: "You are a Bible word study assistant. Always respond with valid JSON only, no other text.",
+        messages: [{
+                role: "user",
+                content: `Do a word study on the word "${word}" from ${verseRef}: "${verseText}".
+
+Return ONLY this JSON:
+{
+  "word": "${word}",
+  "originalWord": "Hebrew or Greek word",
+  "language": "Hebrew or Greek",
+  "strongsNumber": "H1234 or G1234",
+  "pronunciation": "phonetic pronunciation",
+  "definition": "2-3 sentence definition focusing on biblical meaning",
+  "usageInContext": "How this specific word is used in this verse and what it means here",
+  "otherVerses": ["Reference 1", "Reference 2"],
+  "applicationToday": "One practical sentence for modern application"
+}`
+            }]
+    });
+    const text = response.content[0].text;
+    const start = text.indexOf('{');
+    const end = text.lastIndexOf('}');
+    return JSON.parse(text.substring(start, end + 1));
+});
 //# sourceMappingURL=index.js.map

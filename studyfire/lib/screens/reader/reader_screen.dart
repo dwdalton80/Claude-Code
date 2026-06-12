@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -293,7 +294,26 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
 
   void _openAiStudy(BibleVerse verse) {}
 
-  void _showWordOfDay(BibleVerse verse) {}
+  void _showWordOfDay(BibleVerse verse) {
+    // Pick the most significant word from the verse (first noun/key word)
+    final words = verse.text.replaceAll(RegExp(r'[^a-zA-Z ]'), '').split(' ')
+        .where((w) => w.length > 4).toList();
+    final word = words.isNotEmpty ? words[0] : verse.text.split(' ')[0];
+    
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.cardDark,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => _WordStudySheet(
+        word: word,
+        verseRef: verse.reference,
+        verseText: verse.text,
+      ),
+    );
+  }
 
   void _showSearchSheet() {
     showModalBottomSheet(
@@ -504,11 +524,8 @@ class _VerseList extends StatelessWidget {
       itemBuilder: (_, i) {
         final verse = verses[i];
         // Look up highlight using book_chapter_verseId key
-        final verseKey = highlights.keys
-            .where((k) => k.endsWith('_${verse.id}'))
-            .firstOrNull;
-        final highlightColor = _highlightColors[
-            verseKey != null ? highlights[verseKey] : highlights[verse.id]];
+        final verseKey = '${verse.book}_${verse.chapter}_${verse.id}';
+        final highlightColor = _highlightColors[highlights[verseKey]];
         final hasNote = notes.containsKey(verse.id);
 
         return GestureDetector(
@@ -1108,6 +1125,144 @@ class _ChapterPicker extends StatelessWidget {
         onPick(book, ch);
         if (Navigator.canPop(context)) Navigator.pop(context);
       },
+    );
+  }
+}
+
+// ── Word Study Sheet ──────────────────────────────────────────────────────────
+
+class _WordStudySheet extends StatefulWidget {
+  final String word;
+  final String verseRef;
+  final String verseText;
+
+  const _WordStudySheet({
+    required this.word,
+    required this.verseRef,
+    required this.verseText,
+  });
+
+  @override
+  State<_WordStudySheet> createState() => _WordStudySheetState();
+}
+
+class _WordStudySheetState extends State<_WordStudySheet> {
+  Map<String, dynamic>? _data;
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final fn = FirebaseFunctions.instanceFor(region: 'us-central1')
+          .httpsCallable('getWordStudy');
+      final result = await fn.call({
+        'word': widget.word,
+        'verseRef': widget.verseRef,
+        'verseText': widget.verseText,
+      });
+      if (mounted) setState(() {
+        _data = Map<String, dynamic>.from(result.data);
+        _loading = false;
+      });
+    } catch (e) {
+      if (mounted) setState(() {
+        _error = e.toString();
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.75,
+      maxChildSize: 0.95,
+      builder: (_, ctrl) => SingleChildScrollView(
+        controller: ctrl,
+        padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(context).padding.bottom + 24),
+        child: _loading
+            ? const Center(child: Padding(
+                padding: EdgeInsets.all(40),
+                child: CircularProgressIndicator(),
+              ))
+            : _error != null
+                ? Center(child: Text('Error: $_error', style: AppTypography.bodySmall))
+                : _buildContent(),
+      ),
+    );
+  }
+
+  Widget _buildContent() {
+    final d = _data!;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Text('📖 ', style: TextStyle(fontSize: 20)),
+            Text('Word Study', style: AppTypography.labelSmall.copyWith(color: AppColors.warmGold)),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Text(d['word'] ?? widget.word, style: AppTypography.displaySmall),
+        const SizedBox(height: 4),
+        Row(
+          children: [
+            Text(d['originalWord'] ?? '', style: AppTypography.labelMedium.copyWith(color: AppColors.warmGold)),
+            const SizedBox(width: 8),
+            Text('(${d['language'] ?? ''} · ${d['strongsNumber'] ?? ''})',
+                style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary)),
+          ],
+        ),
+        if (d['pronunciation'] != null) ...[
+          const SizedBox(height: 4),
+          Text('/${d['pronunciation']}/', style: AppTypography.bodySmall.copyWith(fontStyle: FontStyle.italic, color: AppColors.textSecondary)),
+        ],
+        const Divider(height: 24),
+        _Section(title: 'Definition', content: d['definition'] ?? ''),
+        _Section(title: 'In This Verse', content: d['usageInContext'] ?? ''),
+        _Section(title: 'Today', content: d['applicationToday'] ?? ''),
+        if (d['otherVerses'] != null && (d['otherVerses'] as List).isNotEmpty) ...[
+          const SizedBox(height: 16),
+          Text('Also appears in', style: AppTypography.labelSmall.copyWith(color: AppColors.textSecondary)),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            children: (d['otherVerses'] as List).map((ref) => Chip(
+              label: Text(ref.toString(), style: AppTypography.bodySmall),
+              backgroundColor: AppColors.surface,
+            )).toList(),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _Section extends StatelessWidget {
+  final String title;
+  final String content;
+  const _Section({required this.title, required this.content});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: AppTypography.labelSmall.copyWith(color: AppColors.textSecondary)),
+          const SizedBox(height: 4),
+          Text(content, style: AppTypography.bodyMedium),
+        ],
+      ),
     );
   }
 }

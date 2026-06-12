@@ -4,6 +4,7 @@ import { generateSparkQuestion } from "./claude/spark_questions";
 import { generateAiStudy, StudyContext } from "./claude/ai_study";
 import { generateQuizBatch } from "./claude/quiz_generation";
 import { generateSermonDebrief, suggestSermonTitle, DebriefContext } from "./claude/sermon_debrief";
+import { getClaudeClient, MODELS } from "./claude/client";
 import { recordStudyActivity, replenishGraceDays } from "./gamification/streak_manager";
 import { sm2Update, scoreToGrade } from "./gamification/sm2_algorithm";
 import {
@@ -484,3 +485,38 @@ async function getTodaysPassages(): Promise<Array<{ id: string; text: string; re
     },
   ];
 }
+
+// ── HTTPS Callable: Word Study ────────────────────────────────────────────────
+export const getWordStudy = functions.https.onCall(async (request) => {
+  const raw = (request as any).data ?? request ?? {};
+  const { word, verseRef, verseText } = raw;
+
+  const client = getClaudeClient();
+  const response = await client.messages.create({
+    model: MODELS.haiku,
+    max_tokens: 600,
+    system: "You are a Bible word study assistant. Always respond with valid JSON only, no other text.",
+    messages: [{
+      role: "user",
+      content: `Do a word study on the word "${word}" from ${verseRef}: "${verseText}".
+
+Return ONLY this JSON:
+{
+  "word": "${word}",
+  "originalWord": "Hebrew or Greek word",
+  "language": "Hebrew or Greek",
+  "strongsNumber": "H1234 or G1234",
+  "pronunciation": "phonetic pronunciation",
+  "definition": "2-3 sentence definition focusing on biblical meaning",
+  "usageInContext": "How this specific word is used in this verse and what it means here",
+  "otherVerses": ["Reference 1", "Reference 2"],
+  "applicationToday": "One practical sentence for modern application"
+}`
+    }]
+  });
+
+  const text = (response.content[0] as any).text;
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  return JSON.parse(text.substring(start, end + 1));
+});
