@@ -413,17 +413,19 @@ class _AccountStep extends ConsumerWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
           const _StepProgress(current: 5, total: 5),
-          const SizedBox(height: 40),
-          const Text('Save your progress', style: AppTypography.displayMedium),
+          const Spacer(),
+          const Text('Save your progress', style: AppTypography.displayMedium, textAlign: TextAlign.center),
           const SizedBox(height: 8),
           Text(
             'Your streaks, XP, and study history sync across devices.',
             style: AppTypography.bodyMedium.copyWith(color: AppColors.textSecondary),
+            textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 40),
+          const SizedBox(height: 48),
           // Sign in with Apple
           _AuthButton(
             icon: Icons.apple,
@@ -469,6 +471,8 @@ class _AccountStep extends ConsumerWidget {
             const SizedBox(height: 32),
             const Center(child: CircularProgressIndicator()),
           ],
+          const Spacer(),
+          const SizedBox(height: 32),
         ],
       ),
     );
