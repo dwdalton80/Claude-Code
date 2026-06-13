@@ -117,10 +117,6 @@ class _WordOfDayScreenState extends State<WordOfDayScreen> {
   }
 
   void _goDeeper() {
-    if (!widget.isPremium) {
-      _showPaywallPrompt();
-      return;
-    }
     setState(() => _showExplorer = true);
   }
 
