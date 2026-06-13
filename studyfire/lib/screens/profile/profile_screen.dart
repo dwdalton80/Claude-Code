@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
@@ -473,23 +475,52 @@ class _BookGrid extends StatelessWidget {
   }
 }
 
-class _BadgesGrid extends StatelessWidget {
+class _BadgesGrid extends StatefulWidget {
+  @override
+  State<_BadgesGrid> createState() => _BadgesGridState();
+}
+
+class _BadgesGridState extends State<_BadgesGrid> {
+  Set<String> _earned = {};
+
+  static const _allBadges = [
+    ('spark', '⚡', 'Spark', '100 XP'),
+    ('on_fire', '🔥', 'On Fire', '500 XP'),
+    ('burning_bright', '✨', 'Burning Bright', '1,500 XP'),
+    ('unquenchable', '💪', 'Unquenchable', '3,500 XP'),
+    ('flame_keeper', '🛡️', 'Flame Keeper', '7,000 XP'),
+    ('eternal_flame', '👑', 'Eternal Flame', '12,000 XP'),
+    ('first_verse', '📖', 'First Verse', 'Memorized 1 verse'),
+    ('ten_verses', '🧠', 'Ten Verses', 'Memorized 10 verses'),
+    ('comeback', '🌅', 'Comeback', 'Returned after 7+ days'),
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBadges();
+  }
+
+  Future<void> _loadBadges() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    final snap = await FirebaseFirestore.instance
+        .collection('badges')
+        .doc(user.uid)
+        .collection('earned')
+        .get();
+    if (mounted) setState(() => _earned = snap.docs.map((d) => d.id).toSet());
+  }
+
+  void _shareBadge(String emoji, String name, String requirement) {
+    Share.share(
+      'I just earned the "$name" badge on StudyFire! $emoji\n\n$requirement\n\nJoin me at studyfire.app 🔥',
+      subject: 'I earned a StudyFire badge!',
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    const allBadges = [
-      ('spark', '⚡', 'Spark', '100 XP'),
-      ('on_fire', '🔥', 'On Fire', '500 XP'),
-      ('burning_bright', '✨', 'Burning Bright', '1,500 XP'),
-      ('unquenchable', '💪', 'Unquenchable', '3,500 XP'),
-      ('flame_keeper', '🛡️', 'Flame Keeper', '7,000 XP'),
-      ('eternal_flame', '👑', 'Eternal Flame', '12,000 XP'),
-      ('first_verse', '📖', 'First Verse', 'Memorized 1 verse'),
-      ('ten_verses', '🧠', 'Ten Verses', 'Memorized 10 verses'),
-      ('comeback', '🌅', 'Comeback', 'Returned after 7+ days'),
-    ];
-
-    const earned = {'spark', 'on_fire'};
-
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
       child: Column(
@@ -506,18 +537,24 @@ class _BadgesGrid extends StatelessWidget {
               crossAxisSpacing: 12,
               childAspectRatio: 0.75,
             ),
-            itemCount: allBadges.length,
+            itemCount: _allBadges.length,
             itemBuilder: (_, i) {
-              final badge = allBadges[i];
-              final isEarned = earned.contains(badge.$1);
+              final badge = _allBadges[i];
+              final isEarned = _earned.contains(badge.$1);
               return _BadgeCell(
                 emoji: badge.$2,
                 name: badge.$3,
                 isEarned: isEarned,
-                onTap: isEarned ? () {} : null,
+                onTap: isEarned ? () => _shareBadge(badge.$2, badge.$3, badge.$4) : null,
               );
             },
           ),
+          if (_earned.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text('Tap a badge to share it!',
+                style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary)),
+            ),
         ],
       ),
     );
