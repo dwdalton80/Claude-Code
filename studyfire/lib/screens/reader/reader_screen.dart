@@ -1247,7 +1247,7 @@ class _WordStudySheetState extends State<_WordStudySheet> {
       });
     } catch (e) {
       if (mounted) setState(() {
-        _error = e.toString();
+        _error = 'Word study unavailable right now — please try again later.';
         _loading = false;
       });
     }
@@ -1268,7 +1268,7 @@ class _WordStudySheetState extends State<_WordStudySheet> {
                 child: CircularProgressIndicator(),
               ))
             : _error != null
-                ? Center(child: Text('Error: $_error', style: AppTypography.bodySmall))
+                ? Center(child: Text(_error!, style: AppTypography.bodySmall))
                 : _buildContent(),
       ),
     );
