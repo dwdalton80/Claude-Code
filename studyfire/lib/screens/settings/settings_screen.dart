@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/colors.dart';
 import '../../core/constants/typography.dart';
@@ -155,8 +158,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
           // ── Data ───────────────────────────────────────────────────────────
           _SectionHeader('Data'),
-          if (widget.profile.isPremium)
-            _ActionTile(
+          _ActionTile(
               icon: Icons.picture_as_pdf_outlined,
               label: 'Export journal as PDF',
               color: AppColors.warmWhite,
@@ -292,11 +294,62 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
-  void _exportPdf() {
-    // TODO: Cloud Function export
+  void _exportPdf() async {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('PDF export coming soon')),
+      const SnackBar(content: Text('Generating PDF…')),
     );
+    try {
+      final uid = widget.profile.uid;
+      final entries = await FirestoreService().getJournalEntries(uid);
+      
+      final pdf = pw.Document();
+      
+      pdf.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.all(40),
+          build: (context) => [
+            pw.Header(
+              level: 0,
+              child: pw.Text('StudyFire Journal',
+                style: pw.TextStyle(fontSize: 28, fontWeight: pw.FontWeight.bold)),
+            ),
+            pw.Text('Exported on \${DateTime.now().toString().split(' ')[0]}',
+              style: const pw.TextStyle(fontSize: 12, color: PdfColors.grey)),
+            pw.SizedBox(height: 20),
+            ...entries.map((e) => pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Divider(),
+                pw.SizedBox(height: 8),
+                pw.Text(e.title.isEmpty ? 'Untitled' : e.title,
+                  style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
+                pw.SizedBox(height: 4),
+                pw.Text('\${e.date.month}/\${e.date.day}/\${e.date.year}',
+                  style: const pw.TextStyle(fontSize: 11, color: PdfColors.grey600)),
+                if (e.scriptureRefs.isNotEmpty) ...[
+                  pw.SizedBox(height: 4),
+                  pw.Text('Scripture: ' + e.scriptureRefs.join(', '),
+                    style: pw.TextStyle(fontSize: 12, fontStyle: pw.FontStyle.italic, color: PdfColors.orange800)),
+                ],
+                pw.SizedBox(height: 8),
+                pw.Text(e.content, style: const pw.TextStyle(fontSize: 13)),
+                pw.SizedBox(height: 16),
+              ],
+            )),
+          ],
+        ),
+      );
+
+      await Printing.sharePdf(
+        bytes: await pdf.save(),
+        filename: 'StudyFire_Journal_\${DateTime.now().toString().split(' ')[0]}.pdf',
+      );
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Export failed: \$e')),
+      );
+    }
   }
 
   String _sessionLengthLabel(SessionLength s) {

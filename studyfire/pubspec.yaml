@@ -71,6 +71,8 @@ dependencies:
   collection: ^1.18.0
   rxdart: ^0.27.7
   connectivity_plus: ^6.0.3
+  pdf: ^3.12.0
+  printing: ^5.14.3
 
 dev_dependencies:
   flutter_test:

@@ -1,4 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
+import '../../core/services/firestore_service.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -213,7 +217,57 @@ class _HeroSection extends StatelessWidget {
       );
     }
   }
-
+void _exportPdf(BuildContext context) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Generating PDF…')),
+    );
+    try {
+      final entries = await FirestoreService().getJournalEntries(user.uid);
+      final pdf = pw.Document();
+      final today = DateTime.now();
+      final dateStr = '${today.year}-${today.month.toString().padLeft(2,'0')}-${today.day.toString().padLeft(2,'0')}';
+      pdf.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.all(40),
+          build: (ctx) => [
+            pw.Text('StudyFire Journal', style: pw.TextStyle(fontSize: 28, fontWeight: pw.FontWeight.bold)),
+            pw.SizedBox(height: 4),
+            pw.Text('Exported $dateStr', style: const pw.TextStyle(fontSize: 12, color: PdfColors.grey)),
+            pw.SizedBox(height: 20),
+            ...entries.map((e) => pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Divider(),
+                pw.SizedBox(height: 8),
+                pw.Text(e.title.isEmpty ? 'Untitled' : e.title,
+                  style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
+                pw.SizedBox(height: 4),
+                pw.Text('${e.date.month}/${e.date.day}/${e.date.year}',
+                  style: const pw.TextStyle(fontSize: 11, color: PdfColors.grey600)),
+                if (e.scriptureRefs.isNotEmpty)
+                  pw.Text('Scripture: ' + e.scriptureRefs.join(', '),
+                    style: pw.TextStyle(fontSize: 12, fontStyle: pw.FontStyle.italic, color: PdfColors.orange800)),
+                pw.SizedBox(height: 8),
+                pw.Text(e.content, style: const pw.TextStyle(fontSize: 13)),
+                pw.SizedBox(height: 16),
+              ],
+            )),
+          ],
+        ),
+      );
+      await Printing.sharePdf(
+        bytes: await pdf.save(),
+        filename: 'StudyFire_Journal_$dateStr.pdf',
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Export failed: $e')),
+      );
+    }
+  }
   void _showSettings(BuildContext context) {
     showModalBottomSheet(
       context: context,
@@ -243,6 +297,15 @@ class _HeroSection extends StatelessWidget {
               trailing: const Icon(Icons.chevron_right, color: Colors.white38),
               onTap: () async {
                 await launchUrl(Uri.parse('https://dwdalton80.github.io/studyfire-site'), mode: LaunchMode.externalApplication);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.picture_as_pdf_outlined, color: Colors.white70),
+              title: const Text('Export Journal as PDF', style: TextStyle(color: Colors.white)),
+              trailing: const Icon(Icons.chevron_right, color: Colors.white38),
+              onTap: () {
+                Navigator.pop(context);
+                _exportPdf(context);
               },
             ),
             ListTile(
