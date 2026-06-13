@@ -10,6 +10,7 @@ import '../../core/constants/colors.dart';
 import '../../core/constants/typography.dart';
 import '../../core/constants/xp_rewards.dart';
 import '../../core/services/firestore_service.dart';
+import '../../core/services/streak_service.dart';
 import '../../core/services/xp_service.dart';
 import '../../widgets/common/flame_cta_button.dart';
 import '../../widgets/common/progress_bar.dart';
@@ -68,10 +69,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   int _sessionVerseCount = 0;
   double _sessionProgress = 0.0;
   final Set<String> _countedChapters = {};
+  bool _streakRecorded = false;
 
   final _scrollController = ScrollController();
   final _db = FirestoreService();
   final _xpService = XpService();
+  final _streakService = StreakService();
 
   bool _tapToReveal = false;
   bool _showHint = false;
@@ -134,6 +137,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
           .doc(widget.uid)
           .update({'profile.versesRead': FieldValue.increment(verses.length)})
           .catchError((_) {});
+      if (!_streakRecorded) {
+        _streakRecorded = true;
+        _streakService.recordActivity(widget.uid).catchError((_) {});
+      }
     }
   }
 

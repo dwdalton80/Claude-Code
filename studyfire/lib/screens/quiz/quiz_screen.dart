@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/colors.dart';
 import '../../core/constants/typography.dart';
 import '../../core/constants/xp_rewards.dart';
+import '../../core/services/streak_service.dart';
 import '../../core/services/xp_service.dart';
 import '../../widgets/common/flame_cta_button.dart';
 import '../../widgets/gamification/xp_burst.dart';
@@ -68,6 +69,7 @@ class _QuizScreenState extends ConsumerState<QuizScreen> {
   int _burstXp = 0;
 
   final _xpService = XpService();
+  final _streakService = StreakService();
 
   @override
   void initState() {
@@ -230,6 +232,7 @@ class _QuizScreenState extends ConsumerState<QuizScreen> {
     final perfect = _score == _questions.length;
     final xp = XpRewards.completeQuiz + (perfect ? XpRewards.perfectScoreBonus : 0);
     _xpService.accumulateXp(widget.uid, xp);
+    _streakService.recordActivity(widget.uid).catchError((_) {});
     setState(() {
       _totalXp = xp;
       _burstXp = xp;

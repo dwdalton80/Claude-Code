@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/colors.dart';
 import '../../core/constants/typography.dart';
 import '../../core/services/firestore_service.dart';
+import '../../core/services/streak_service.dart';
 import '../../models/journal_entry.dart';
 import '../../widgets/common/flame_cta_button.dart';
 
@@ -307,6 +308,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
       updatedAt: now,
     );
     await db.saveJournalEntry(uid, entry);
+    StreakService().recordActivity(uid).catchError((_) {});
     if (mounted) setState(() => _saved = true);
   }
 
