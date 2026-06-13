@@ -83,13 +83,7 @@ class ProfileScreen extends ConsumerWidget {
           ),
           const SliverToBoxAdapter(child: _SectionDivider()),
           SliverToBoxAdapter(
-            child: _StudyStats(
-              totalVerses: 0,
-              wordsExplored: 0,
-              questionsAnswered: 0,
-              journalEntries: 0,
-              versesMemorized: 0,
-            ),
+            child: _StudyStats(),
           ),
           const SliverToBoxAdapter(child: SizedBox(height: 80)),
         ],
@@ -404,10 +398,63 @@ class _StatCard extends StatelessWidget {
   }
 }
 
-class _BooksReadGrid extends StatelessWidget {
+class _BooksReadGrid extends StatefulWidget {
+  @override
+  State<_BooksReadGrid> createState() => _BooksReadGridState();
+}
+
+class _BooksReadGridState extends State<_BooksReadGrid> {
+  Set<String> _engaged = {};
+
+  // Maps Firestore book IDs (API.Bible format) → display abbreviations
+  static const _bookIdToAbbr = {
+    'gen': 'Gen',   'exo': 'Ex',    'lev': 'Lev',   'num': 'Num',   'deu': 'Deut',
+    'jos': 'Josh',  'jdg': 'Judg',  'rut': 'Ruth',  '1sa': '1Sam',  '2sa': '2Sam',
+    '1ki': '1Kgs',  '2ki': '2Kgs',  '1ch': '1Chr',  '2ch': '2Chr',  'ezr': 'Ezra',
+    'neh': 'Neh',   'est': 'Est',   'job': 'Job',   'psa': 'Ps',    'pro': 'Prov',
+    'ecc': 'Eccl',  'sng': 'Song',  'isa': 'Isa',   'jer': 'Jer',   'lam': 'Lam',
+    'ezk': 'Ezek',  'dan': 'Dan',   'hos': 'Hos',   'jol': 'Joel',  'amo': 'Amos',
+    'oba': 'Ob',    'jon': 'Jon',   'mic': 'Mic',   'nam': 'Nah',   'hab': 'Hab',
+    'zep': 'Zeph',  'hag': 'Hag',  'zec': 'Zech',  'mal': 'Mal',
+    'mat': 'Matt',  'mrk': 'Mark',  'luk': 'Luke',  'jhn': 'John',  'act': 'Acts',
+    'rom': 'Rom',   '1co': '1Cor',  '2co': '2Cor',  'gal': 'Gal',   'eph': 'Eph',
+    'php': 'Phil',  'col': 'Col',   '1th': '1Th',   '2th': '2Th',   '1ti': '1Tim',
+    '2ti': '2Tim',  'tit': 'Titus', 'phm': 'Philem','heb': 'Heb',   'jas': 'Jas',
+    '1pe': '1Pet',  '2pe': '2Pet',  '1jn': '1Jn',   '2jn': '2Jn',   '3jn': '3Jn',
+    'jud': 'Jude',  'rev': 'Rev',
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+
+    final snap = await FirebaseFirestore.instance
+        .collection('highlights')
+        .doc(uid)
+        .collection('verses')
+        .get();
+
+    final books = <String>{};
+    for (final doc in snap.docs) {
+      // verseId format: book_chapter_verseNum e.g. jhn_3_16
+      final parts = doc.id.split('_');
+      if (parts.isNotEmpty) {
+        final abbr = _bookIdToAbbr[parts[0]];
+        if (abbr != null) books.add(abbr);
+      }
+    }
+
+    if (mounted) setState(() => _engaged = books);
+  }
+
   @override
   Widget build(BuildContext context) {
-    // 66 books of the Bible — OT 39, NT 27
     const otBooks = [
       'Gen', 'Ex', 'Lev', 'Num', 'Deut', 'Josh', 'Judg', 'Ruth',
       '1Sam', '2Sam', '1Kgs', '2Kgs', '1Chr', '2Chr', 'Ezra', 'Neh',
@@ -427,15 +474,25 @@ class _BooksReadGrid extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Books Read', style: AppTypography.labelLarge),
+          Row(
+            children: [
+              const Text('Books Read', style: AppTypography.labelLarge),
+              const Spacer(),
+              if (_engaged.isNotEmpty)
+                Text(
+                  '${_engaged.length} / 66',
+                  style: AppTypography.bodySmall.copyWith(color: AppColors.warmGold),
+                ),
+            ],
+          ),
           const SizedBox(height: 4),
           Text('Old Testament', style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary)),
           const SizedBox(height: 8),
-          _BookGrid(books: otBooks, completedBooks: {'Gen', 'John'}),
+          _BookGrid(books: otBooks, completedBooks: _engaged),
           const SizedBox(height: 12),
           Text('New Testament', style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary)),
           const SizedBox(height: 8),
-          _BookGrid(books: ntBooks, completedBooks: {'John'}),
+          _BookGrid(books: ntBooks, completedBooks: _engaged),
         ],
       ),
     );
@@ -623,20 +680,61 @@ class _BadgeCell extends StatelessWidget {
   }
 }
 
-class _StudyStats extends StatelessWidget {
-  final int totalVerses;
-  final int wordsExplored;
-  final int questionsAnswered;
-  final int journalEntries;
-  final int versesMemorized;
+class _StudyStats extends StatefulWidget {
+  @override
+  State<_StudyStats> createState() => _StudyStatsState();
+}
 
-  const _StudyStats({
-    required this.totalVerses,
-    required this.wordsExplored,
-    required this.questionsAnswered,
-    required this.journalEntries,
-    required this.versesMemorized,
-  });
+class _StudyStatsState extends State<_StudyStats> {
+  int _journalEntries = 0;
+  int _versesMemorized = 0;
+  int _questionsAnswered = 0;
+  int _wordsExplored = 0;
+  int _versesRead = 0;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) {
+      if (mounted) setState(() => _loading = false);
+      return;
+    }
+    final db = FirebaseFirestore.instance;
+
+    try {
+      final results = await Future.wait([
+        db.collection('journal').doc(uid).collection('entries').get(),
+        db.collection('memoryVerses').doc(uid).collection('verses')
+            .where('mastered', isEqualTo: true).get(),
+        db.collection('users').doc(uid).get(),
+      ]);
+
+      final journalCount = (results[0] as QuerySnapshot).docs.length;
+      final masteredCount = (results[1] as QuerySnapshot).docs.length;
+      final userSnap = results[2] as DocumentSnapshot;
+      final data = userSnap.data() as Map<String, dynamic>? ?? {};
+      final profile = data['profile'] as Map<String, dynamic>? ?? {};
+
+      if (mounted) {
+        setState(() {
+          _journalEntries = journalCount;
+          _versesMemorized = masteredCount;
+          _questionsAnswered = (profile['questionsAnswered'] as num?)?.toInt() ?? 0;
+          _wordsExplored = (profile['wordsExplored'] as num?)?.toInt() ?? 0;
+          _versesRead = (profile['versesRead'] as num?)?.toInt() ?? 0;
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -647,11 +745,20 @@ class _StudyStats extends StatelessWidget {
         children: [
           const Text('Study Stats', style: AppTypography.labelLarge),
           const SizedBox(height: 12),
-          _StatRow(label: 'Verses Read', value: totalVerses.toString()),
-          _StatRow(label: 'Words Explored', value: wordsExplored.toString()),
-          _StatRow(label: 'Questions Answered', value: questionsAnswered.toString()),
-          _StatRow(label: 'Journal Entries', value: journalEntries.toString()),
-          _StatRow(label: 'Verses Memorized', value: versesMemorized.toString()),
+          if (_loading)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            )
+          else ...[
+            _StatRow(label: 'Verses Read', value: _versesRead.toString()),
+            _StatRow(label: 'Words Explored', value: _wordsExplored.toString()),
+            _StatRow(label: 'Questions Answered', value: _questionsAnswered.toString()),
+            _StatRow(label: 'Journal Entries', value: _journalEntries.toString()),
+            _StatRow(label: 'Verses Memorized', value: _versesMemorized.toString()),
+          ],
         ],
       ),
     );

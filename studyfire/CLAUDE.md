@@ -182,8 +182,8 @@ const raw = (request as any).data ?? (request as any).body?.data ?? request ?? {
 - Real user data, photo upload
 - XP/streak real-time stream
 - Badges from Firestore, tap to share
-- Study Stats: HARDCODED (pre-launch task)
-- Books Read: HARDCODED (pre-launch task)
+- Study Stats: wired — journal entries + mastered verses from Firestore; questionsAnswered/wordsExplored/versesRead read from profile fields (0 until tracking is added)
+- Books Read: wired — derived from highlights collection (books where user has highlighted ≥1 verse)
 
 ### Settings Sheet
 - Notifications (opens iOS Settings)
@@ -226,8 +226,8 @@ const raw = (request as any).data ?? (request as any).body?.data ?? request ?? {
 
 ### Active
 - Streak shows 0 — needs consecutive daily sessions to verify
-- Study Stats hardcoded — pre-launch fix needed
-- Books Read hardcoded — pre-launch fix needed
+- ~~Study Stats hardcoded~~ — wired (journal + mastered verses real; questionsAnswered/wordsExplored/versesRead = 0 until tracking added)
+- ~~Books Read hardcoded~~ — wired from highlights collection
 - Splash brief flash — main screen shows fraction of second before splash
 - Old highlight keys (just numbers) may still exist in Firestore — delete manually
 
@@ -257,8 +257,8 @@ const raw = (request as any).data ?? (request as any).body?.data ?? request ?? {
 - [ ] Confirm scripts/gen_quiz.js in .gitignore
 
 ### Data
-- [ ] Wire Study Stats to real Firestore data
-- [ ] Wire Books Read to reading history
+- [x] Wire Study Stats to real Firestore data
+- [x] Wire Books Read to highlights (books with ≥1 highlighted verse)
 - [ ] Verify streak logic over multiple days
 
 ### Content
