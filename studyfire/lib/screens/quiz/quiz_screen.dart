@@ -128,11 +128,15 @@ class _QuizScreenState extends ConsumerState<QuizScreen> {
       ),
     ];
     // Filter by topic if specified
-    _questions = widget.topicTag != null
+    var filtered = widget.topicTag != null
         ? allQuestions.where((q) => q.topicTag == widget.topicTag).toList()
-        : allQuestions;
+        : allQuestions.toList();
     // If no questions for topic, show all
-    if (_questions.isEmpty) _questions = allQuestions;
+    if (filtered.isEmpty) filtered = allQuestions.toList();
+    // Shuffle for variety
+    filtered.shuffle();
+    // Take only topic-specific questions (no cross-topic mixing)
+    _questions = filtered;
     setState(() => _loading = false);
   }
 
