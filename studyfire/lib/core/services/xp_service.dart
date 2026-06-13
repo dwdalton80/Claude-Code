@@ -27,8 +27,8 @@ class XpService {
 
     await _firestore.runTransaction((tx) async {
       final snap = await tx.get(ref);
-      final data = snap.data() as Map<String, dynamic>;
-      final profile = data['profile'] as Map<String, dynamic>;
+      final data = (snap.data() as Map<String, dynamic>?) ?? {};
+      final profile = (data['profile'] as Map<String, dynamic>?) ?? {};
       final currentXp = (profile['xp'] as int?) ?? 0;
       final currentLevel = (profile['level'] as int?) ?? 1;
       final newXp = currentXp + pending;

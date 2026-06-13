@@ -10,8 +10,8 @@ class StreakService {
 
     await _firestore.runTransaction((tx) async {
       final snap = await tx.get(ref);
-      final data = snap.data() as Map<String, dynamic>;
-      final profile = data['profile'] as Map<String, dynamic>;
+      final data = (snap.data() as Map<String, dynamic>?) ?? {};
+      final profile = (data['profile'] as Map<String, dynamic>?) ?? {};
 
       final now = DateTime.now();
       final today = DateTime(now.year, now.month, now.day);
@@ -37,8 +37,10 @@ class StreakService {
       int longestStreak = profile['longestStreak'] ?? 0;
       bool hasGraceDay = profile['hasGraceDayAvailable'] ?? true;
 
-      final yesterday = today.subtract(const Duration(days: 1));
-      final twoDaysAgo = today.subtract(const Duration(days: 2));
+      // Calendar-date math (NOT Duration subtraction) so DST transitions
+      // don't shift these off midnight and break the equality comparison.
+      final yesterday = DateTime(today.year, today.month, today.day - 1);
+      final twoDaysAgo = DateTime(today.year, today.month, today.day - 2);
 
       bool streakBroken = false;
 

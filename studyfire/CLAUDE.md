@@ -225,7 +225,15 @@ const raw = (request as any).data ?? (request as any).body?.data ?? request ?? {
 ## Known Bugs & Issues
 
 ### Active
-- Streak shows 0 — needs consecutive daily sessions to verify
+- ~~Streak shows 0~~ — FIXED. Root cause: the live Spark session
+  (quest/spark_session_screen.dart) only called xpService.flushSession()
+  which writes XP only; it never recorded the streak. Now calls
+  StreakService.recordActivity() on completion. Also fixed a latent DST
+  bug in streak_service (yesterday computed via Duration subtraction →
+  now calendar-date math). NOTE: streak is only credited on Spark
+  completion, not on reading/quiz alone — by design (Spark = core habit).
+  NOTE: spark/spark_screen.dart is dead code (old scaffold, unused) and
+  contains a stale duplicate streak path — safe to delete.
 - ~~Study Stats hardcoded~~ — wired (journal + mastered verses real; questionsAnswered/wordsExplored/versesRead = 0 until tracking added)
 - ~~Books Read hardcoded~~ — wired from highlights collection
 - Splash brief flash — main screen shows fraction of second before splash
@@ -259,7 +267,8 @@ const raw = (request as any).data ?? (request as any).body?.data ?? request ?? {
 ### Data
 - [x] Wire Study Stats to real Firestore data
 - [x] Wire Books Read to highlights (books with ≥1 highlighted verse)
-- [ ] Verify streak logic over multiple days
+- [x] Fix streak recording (was never called from live Spark session) + DST date-math bug
+- [ ] Verify streak logic over multiple days (TestFlight, across a real day boundary)
 
 ### Content
 - [ ] Larger quiz question bank (20+ per topic)

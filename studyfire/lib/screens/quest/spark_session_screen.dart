@@ -6,6 +6,7 @@ import '../../core/constants/typography.dart';
 import '../../core/constants/xp_rewards.dart';
 import '../../core/services/firestore_service.dart';
 import '../../core/services/xp_service.dart';
+import '../../core/services/streak_service.dart';
 import '../../widgets/common/flame_cta_button.dart';
 import '../../app.dart';
 
@@ -29,6 +30,7 @@ class _SparkSessionScreenState extends ConsumerState<SparkSessionScreen>
     with TickerProviderStateMixin {
   final _db = FirestoreService();
   final _xpService = XpService();
+  final _streakService = StreakService();
   final _firestore = FirebaseFirestore.instance;
 
   String? _verseText;
@@ -38,6 +40,7 @@ class _SparkSessionScreenState extends ConsumerState<SparkSessionScreen>
   bool _showQuestion = false;
   bool _showResponse = false;
   bool _completed = false;
+  StreakUpdateResult? _streakResult;
 
   final _responseController = TextEditingController();
   late AnimationController _progressController;
@@ -127,7 +130,17 @@ class _SparkSessionScreenState extends ConsumerState<SparkSessionScreen>
     final uid = ref.read(authStreamProvider).valueOrNull?.uid ?? '';
     if (uid.isNotEmpty) {
       _xpService.accumulateXp(uid, XpRewards.completeSparkSession);
-      _xpService.flushSession(uid);
+      await _xpService.flushSession(uid);
+
+      // Record today's study activity — updates streak, longest streak,
+      // grace day, and totalStudyDays. Idempotent: a no-op if already
+      // recorded today. This is what makes the streak actually increment.
+      try {
+        _streakResult = await _streakService.recordActivity(uid);
+      } catch (_) {
+        // Non-fatal — XP still saved even if streak write fails
+      }
+
       if (_responseController.text.trim().isNotEmpty) {
         await _firestore.collection('journal').doc(uid).collection('entries').add({
           'type': 'spark',
@@ -149,6 +162,8 @@ class _SparkSessionScreenState extends ConsumerState<SparkSessionScreen>
     if (_completed) return _CompletionScreen(
       reference: widget.reference,
       xp: XpRewards.completeSparkSession,
+      streak: _streakResult?.newStreak,
+      milestoneReached: _streakResult?.milestoneReached,
       onDone: () => Navigator.pop(context),
     );
 
@@ -375,16 +390,23 @@ class _SparkProgressBar extends StatelessWidget {
 class _CompletionScreen extends StatelessWidget {
   final String reference;
   final int xp;
+  final int? streak;
+  final int? milestoneReached;
   final VoidCallback onDone;
 
   const _CompletionScreen({
     required this.reference,
     required this.xp,
+    required this.streak,
+    required this.milestoneReached,
     required this.onDone,
   });
 
   @override
   Widget build(BuildContext context) {
+    final hasStreak = streak != null && streak! > 0;
+    final hitMilestone = milestoneReached != null;
+
     return Scaffold(
       backgroundColor: AppColors.deepSlate,
       body: SafeArea(
@@ -397,7 +419,7 @@ class _CompletionScreen extends StatelessWidget {
                 const Text('🔥', style: TextStyle(fontSize: 64)),
                 const SizedBox(height: 24),
                 Text(
-                  'Spark Complete!',
+                  hitMilestone ? '$milestoneReached-Day Streak!' : 'Spark Complete!',
                   style: AppTypography.displayMedium,
                   textAlign: TextAlign.center,
                 ),
@@ -411,6 +433,30 @@ class _CompletionScreen extends StatelessWidget {
                   '+$xp XP earned',
                   style: AppTypography.labelLarge.copyWith(color: AppColors.warmGold),
                 ),
+                if (hasStreak) ...[
+                  const SizedBox(height: 24),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: AppColors.warmGold.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: AppColors.warmGold.withOpacity(0.3)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text('🔥', style: TextStyle(fontSize: 20)),
+                        const SizedBox(width: 8),
+                        Text(
+                          '$streak day${streak == 1 ? '' : 's'} in a row',
+                          style: AppTypography.labelMedium.copyWith(
+                            color: AppColors.warmGold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 48),
                 FlameCTAButton(
                   label: 'Done',
