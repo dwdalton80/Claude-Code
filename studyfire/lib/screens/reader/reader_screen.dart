@@ -262,9 +262,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
         },
         onAskAi: () {
           Navigator.pop(context);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('AI Study coming soon for ${verse.reference}')),
-          );
+          _openAiStudy(verse);
         },
         onAddToMemory: () {
           Navigator.pop(context);
@@ -292,7 +290,17 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     );
   }
 
-  void _openAiStudy(BibleVerse verse) {}
+  void _openAiStudy(BibleVerse verse) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.cardDark,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => _AskAiSheet(verse: verse, uid: widget.uid),
+    );
+  }
 
   void _showWordOfDay(BibleVerse verse) {
     // Pick the most significant word from the verse (first noun/key word)
@@ -1261,6 +1269,213 @@ class _Section extends StatelessWidget {
           Text(title, style: AppTypography.labelSmall.copyWith(color: AppColors.textSecondary)),
           const SizedBox(height: 4),
           Text(content, style: AppTypography.bodyMedium),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Ask AI Sheet ──────────────────────────────────────────────────────────────
+
+class _AskAiSheet extends StatefulWidget {
+  final BibleVerse verse;
+  final String uid;
+  const _AskAiSheet({required this.verse, required this.uid});
+
+  @override
+  State<_AskAiSheet> createState() => _AskAiSheetState();
+}
+
+class _AskAiSheetState extends State<_AskAiSheet> {
+  final _ctrl = TextEditingController();
+  final _scrollCtrl = ScrollController();
+  final List<Map<String, String>> _messages = [];
+  bool _loading = false;
+
+  static const _suggestions = [
+    'What does this verse mean?',
+    'What is the historical context?',
+    'How can I apply this today?',
+    'What comes before and after this?',
+  ];
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    _scrollCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _ask(String question) async {
+    if (question.trim().isEmpty) return;
+    setState(() {
+      _messages.add({'role': 'user', 'content': question});
+      _loading = true;
+    });
+    _ctrl.clear();
+    _scrollToBottom();
+
+    try {
+      final fn = FirebaseFunctions.instanceFor(region: 'us-central1')
+          .httpsCallable('askVerseQuestion', options: HttpsCallableOptions(timeout: const Duration(seconds: 30)));
+      final result = await fn.call({
+        'verseRef': widget.verse.reference,
+        'verseText': widget.verse.text,
+        'question': question,
+      });
+      final data = result.data;
+      final answer = data is Map ? (data['answer'] ?? data.toString()) : data.toString();
+      if (mounted) setState(() {
+        _messages.add({'role': 'ai', 'content': answer});
+        _loading = false;
+      });
+      _scrollToBottom();
+    } catch (e) {
+      if (mounted) setState(() {
+        _messages.add({'role': 'ai', 'content': 'Sorry, I had trouble with that. Please try again.'});
+        _loading = false;
+      });
+    }
+  }
+
+  void _scrollToBottom() {
+    Future.delayed(const Duration(milliseconds: 150), () {
+      if (_scrollCtrl.hasClients) {
+        _scrollCtrl.animateTo(_scrollCtrl.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.85,
+      maxChildSize: 0.95,
+      builder: (_, __) => Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  const Text('🧠 ', style: TextStyle(fontSize: 18)),
+                  Text('Ask AI', style: AppTypography.labelMedium.copyWith(color: AppColors.warmGold)),
+                ]),
+                const SizedBox(height: 4),
+                Text(widget.verse.reference, style: AppTypography.labelSmall.copyWith(color: AppColors.textSecondary)),
+                Text(
+                  '"${widget.verse.text.length > 80 ? '${widget.verse.text.substring(0, 77)}…' : widget.verse.text}"',
+                  style: AppTypography.bodySmall.copyWith(fontStyle: FontStyle.italic),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: _messages.isEmpty
+                ? _buildSuggestions()
+                : ListView.builder(
+                    controller: _scrollCtrl,
+                    padding: const EdgeInsets.all(16),
+                    itemCount: _messages.length + (_loading ? 1 : 0),
+                    itemBuilder: (_, i) {
+                      if (i == _messages.length) {
+                        return const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 8),
+                          child: Row(children: [
+                            SizedBox(width: 8),
+                            SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+                            SizedBox(width: 12),
+                            Text('Thinking…', style: TextStyle(color: AppColors.textSecondary)),
+                          ]),
+                        );
+                      }
+                      final msg = _messages[i];
+                      final isUser = msg['role'] == 'user';
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+                          children: [
+                            if (!isUser) ...[
+                              const CircleAvatar(radius: 14, backgroundColor: AppColors.warmGold,
+                                  child: Text('✦', style: TextStyle(fontSize: 12, color: Colors.black))),
+                              const SizedBox(width: 8),
+                            ],
+                            Flexible(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                decoration: BoxDecoration(
+                                  color: isUser ? AppColors.warmGold.withOpacity(0.15) : AppColors.surface,
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                child: Text(msg['content']!, style: AppTypography.bodyMedium),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+          ),
+          Container(
+            padding: EdgeInsets.fromLTRB(12, 8, 12, MediaQuery.of(context).padding.bottom + 8),
+            decoration: BoxDecoration(
+              color: AppColors.cardDark,
+              border: Border(top: BorderSide(color: AppColors.surface)),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _ctrl,
+                    style: AppTypography.bodyMedium,
+                    decoration: const InputDecoration(
+                      hintText: 'Ask anything about this verse…',
+                      border: InputBorder.none,
+                      contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                    ),
+                    onSubmitted: _ask,
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.send_rounded, color: AppColors.warmGold),
+                  onPressed: () => _ask(_ctrl.text),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSuggestions() {
+    return Padding(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Suggested questions', style: AppTypography.labelSmall.copyWith(color: AppColors.textSecondary)),
+          const SizedBox(height: 12),
+          ..._suggestions.map((q) => GestureDetector(
+            onTap: () => _ask(q),
+            child: Container(
+              width: double.infinity,
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.warmGold.withOpacity(0.2)),
+              ),
+              child: Text(q, style: AppTypography.bodyMedium),
+            ),
+          )),
         ],
       ),
     );
