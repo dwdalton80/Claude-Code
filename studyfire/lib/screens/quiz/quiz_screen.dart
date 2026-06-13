@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/colors.dart';
@@ -76,7 +77,46 @@ class _QuizScreenState extends ConsumerState<QuizScreen> {
 
   Future<void> _loadQuestions() async {
     setState(() => _loading = true);
-    await Future.delayed(const Duration(milliseconds: 600));
+    
+    // Try loading from Firestore daily cache first
+    try {
+      final today = DateTime.now().toIso8601String().split('T')[0];
+      final doc = await FirebaseFirestore.instance
+          .collection('dailycache')
+          .doc(today)
+          .get();
+      final quizData = doc.data()?['quizQuestions'] as Map?;
+      if (quizData != null && widget.topicTag != null) {
+        final topicQuestions = quizData[widget.topicTag] as List?;
+        if (topicQuestions != null && topicQuestions.isNotEmpty) {
+          final loaded = topicQuestions.map((q) {
+            final map = q as Map;
+            final typeStr = map['type'] as String? ?? 'multiple_choice';
+            final type = typeStr == 'true_false' ? QuestionType.trueFalse
+                : typeStr == 'fill_blank' ? QuestionType.fillBlank
+                : typeStr == 'passage_matching' ? QuestionType.passageMatching
+                : QuestionType.multipleChoice;
+            return QuizQuestion(
+              type: type,
+              question: map['question'] as String? ?? '',
+              options: (map['options'] as List?)?.map((o) => o.toString()).toList(),
+              correctAnswer: map['correctAnswer'] as String? ?? '',
+              explanation: map['explanation'] as String? ?? '',
+              topicTag: map['topicTag'] as String? ?? widget.topicTag ?? '',
+              passageRef: map['passageRef'] as String?,
+            );
+          }).toList();
+          loaded.shuffle();
+          _questions = loaded;
+          setState(() => _loading = false);
+          return;
+        }
+      }
+    } catch (e) {
+      debugPrint('Failed to load from Firestore: $e');
+    }
+
+    // Fall back to hardcoded questions
     final allQuestions = [
       const QuizQuestion(
         type: QuestionType.multipleChoice,
