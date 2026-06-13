@@ -187,7 +187,17 @@ class _QuizScreenState extends ConsumerState<QuizScreen> {
     if (q.type == QuestionType.fillBlank) {
       return answer.toLowerCase().trim() == q.correctAnswer.toLowerCase().trim();
     }
-    return answer == q.correctAnswer;
+    return _optionMatchesCorrect(answer, q.correctAnswer);
+  }
+
+  // Handles both full-text correctAnswer ("A. Full text") and letter-only ("A")
+  // so existing Firestore cache still works after prompt format change.
+  static bool _optionMatchesCorrect(String option, String correct) {
+    if (option == correct) return true;
+    if (RegExp(r'^[A-D]$').hasMatch(correct)) {
+      return option.startsWith('$correct.');
+    }
+    return false;
   }
 
   void _selectAnswer(String answer) {
@@ -387,7 +397,7 @@ class _QuizQuestionViewState extends State<_QuizQuestionView> {
                   label: opt,
                   selected: widget.selectedAnswer == opt,
                   answered: widget.answered,
-                  correct: opt == widget.question.correctAnswer,
+                  correct: _QuizScreenState._optionMatchesCorrect(opt, widget.question.correctAnswer),
                   onTap: () => widget.onSelect(opt),
                 )),
             if (widget.answered)
