@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/constants/colors.dart';
 import '../../core/constants/typography.dart';
 import '../../core/constants/xp_rewards.dart';
@@ -77,6 +78,7 @@ class _WordOfDayScreenState extends State<WordOfDayScreen> {
     if (widget.data != null) {
       _data = widget.data;
       _loading = false;
+      _trackWordExplored();
     } else {
       _load();
     }
@@ -98,6 +100,16 @@ class _WordOfDayScreenState extends State<WordOfDayScreen> {
       fromReference: 'Romans 8:28',
     );
     setState(() => _loading = false);
+    _trackWordExplored();
+  }
+
+  void _trackWordExplored() {
+    if (widget.uid.isEmpty) return;
+    FirebaseFirestore.instance
+        .collection('users')
+        .doc(widget.uid)
+        .update({'profile.wordsExplored': FieldValue.increment(1)})
+        .catchError((_) {});
   }
 
   void _react() {

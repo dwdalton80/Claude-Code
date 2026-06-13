@@ -67,6 +67,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   final Map<String, String> _notes = {};
   int _sessionVerseCount = 0;
   double _sessionProgress = 0.0;
+  final Set<String> _countedChapters = {};
 
   final _scrollController = ScrollController();
   final _db = FirestoreService();
@@ -123,6 +124,17 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
       _loading = false;
     });
     _xpService.accumulateXp(widget.uid, XpRewards.openAppDaily);
+
+    // Track verses read — once per unique chapter per session
+    final chapterKey = '${_currentVersion}_${_currentBook}_$_currentChapter';
+    if (widget.uid.isNotEmpty && verses.isNotEmpty && !_countedChapters.contains(chapterKey)) {
+      _countedChapters.add(chapterKey);
+      FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.uid)
+          .update({'profile.versesRead': FieldValue.increment(verses.length)})
+          .catchError((_) {});
+    }
   }
 
   Future<void> _loadHighlights() async {

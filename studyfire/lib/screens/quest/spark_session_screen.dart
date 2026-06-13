@@ -137,6 +137,9 @@ class _SparkSessionScreenState extends ConsumerState<SparkSessionScreen>
           'createdAt': FieldValue.serverTimestamp(),
         });
       }
+      _firestore.collection('users').doc(uid).update({
+        'profile.questionsAnswered': FieldValue.increment(1),
+      }).catchError((_) {});
     }
     if (mounted) setState(() => _completed = true);
   }
