@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter/services.dart';
@@ -72,6 +73,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   final _xpService = XpService();
 
   bool _tapToReveal = false;
+  bool _showHint = false;
 
   @override
   void initState() {
@@ -82,6 +84,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     _loadVerses();
     _loadHighlights();
     _loadNotes();
+    _checkHint();
 
     Future.delayed(const Duration(seconds: 2), () {
       if (mounted) _enterFocusMode();
@@ -96,6 +99,18 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   void dispose() {
     _scrollController.dispose();
     super.dispose();
+  }
+
+  Future<void> _checkHint() async {
+    final prefs = await SharedPreferences.getInstance();
+    final seen = prefs.getBool('hint_reader_longpress') ?? false;
+    if (!seen && mounted) setState(() => _showHint = true);
+  }
+
+  Future<void> _dismissHint() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('hint_reader_longpress', true);
+    if (mounted) setState(() => _showHint = false);
   }
 
   Future<void> _loadVerses() async {
@@ -427,9 +442,33 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                     ),
                   ),
                   Expanded(
-                    child: _loading
-                        ? const Center(child: CircularProgressIndicator())
-                        : _VerseList(
+                    child: Column(
+                      children: [
+                      if (_showHint)
+                        GestureDetector(
+                          onTap: _dismissHint,
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                            color: AppColors.warmGold.withOpacity(0.15),
+                            child: Row(
+                              children: [
+                                const Text('💡 ', style: TextStyle(fontSize: 14)),
+                                const Expanded(
+                                  child: Text(
+                                    'Long press any verse to highlight, ask AI, or add to journal',
+                                    style: TextStyle(fontSize: 12, color: AppColors.warmGold),
+                                  ),
+                                ),
+                                const Icon(Icons.close, size: 14, color: AppColors.warmGold),
+                              ],
+                            ),
+                          ),
+                        ),
+                      Expanded(
+                        child: _loading
+                            ? const Center(child: CircularProgressIndicator())
+                            : _VerseList(
                             verses: _verses,
                             highlights: _highlights,
                             notes: _notes,
@@ -437,7 +476,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                             onLongPress: _onVerseLongPress,
                             scrollController: _scrollController,
                           ),
-                  ),
+                      ),
+                    ],
+                  )),
                   AnimatedSlide(
                     offset: _chromVisible ? Offset.zero : const Offset(0, 1),
                     duration: const Duration(milliseconds: 250),

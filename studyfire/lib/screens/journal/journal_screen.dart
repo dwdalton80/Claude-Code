@@ -132,6 +132,31 @@ class _JournalListState extends State<_JournalList> {
             Text('No notes yet', style: AppTypography.bodyLarge),
             const SizedBox(height: 8),
             Text('Tap + to create your first note', style: AppTypography.bodySmall),
+            const SizedBox(height: 24),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 32),
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.cardDark,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.warmGold.withOpacity(0.3)),
+                ),
+                child: Column(
+                  children: [
+                    const Text('✨', style: TextStyle(fontSize: 28)),
+                    const SizedBox(height: 8),
+                    Text('AI Debrief', style: AppTypography.labelMedium.copyWith(color: AppColors.warmGold)),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Write sermon or study notes and tap "Unpack This" to get AI-powered insights, application points, and discussion questions.',
+                      style: AppTypography.bodySmall,
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ],
         ),
       );

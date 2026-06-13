@@ -10,6 +10,7 @@ import '../../widgets/gamification/xp_burst.dart';
 import 'package:go_router/go_router.dart';
 import '../../app.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'spark_session_screen.dart';
 
 enum SessionLength { spark, short, deep }
@@ -24,6 +25,7 @@ class QuestScreen extends ConsumerStatefulWidget {
 class _QuestScreenState extends ConsumerState<QuestScreen> {
   SessionLength _sessionLength = SessionLength.spark;
   String _passage = 'Romans 8:28';
+  bool _showSparkHint = false;
   StreamSubscription? _profileSub;
   String _passageId = 'rom_8_28';
   int _streak = 0;
@@ -35,6 +37,13 @@ class _QuestScreenState extends ConsumerState<QuestScreen> {
     super.initState();
     _loadTodaysPassage();
     _loadUserStats();
+    _checkSparkHint();
+  }
+
+  Future<void> _checkSparkHint() async {
+    final prefs = await SharedPreferences.getInstance();
+    final seen = prefs.getBool('hint_spark_session') ?? false;
+    if (!seen && mounted) setState(() => _showSparkHint = true);
   }
 
   Future<void> _loadTodaysPassage() async {
@@ -104,6 +113,37 @@ class _QuestScreenState extends ConsumerState<QuestScreen> {
           children: [
             Column(
               children: [
+                if (_showSparkHint)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: GestureDetector(
+                      onTap: () async {
+                        final prefs = await SharedPreferences.getInstance();
+                        await prefs.setBool('hint_spark_session', true);
+                        if (mounted) setState(() => _showSparkHint = false);
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppColors.cardDark,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppColors.warmGold.withOpacity(0.3)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Text('⚡ ', style: TextStyle(fontSize: 16)),
+                            const Expanded(
+                              child: Text(
+                                'A Spark is 90 seconds of focused study — a verse, an AI question, and your reflection. Tap to dismiss.',
+                                style: TextStyle(fontSize: 12, color: AppColors.warmGold),
+                              ),
+                            ),
+                            const Icon(Icons.close, size: 14, color: AppColors.warmGold),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
                 Expanded(flex: 8, child: _QuestCard(
                   passage: _passage,
                   xpReward: _xpForLength(_sessionLength),
@@ -241,7 +281,7 @@ class _QuestCard extends StatelessWidget {
               selected: sessionLength,
               onChanged: onLengthChanged,
             ),
-            const Spacer(),
+            const SizedBox(height: 24),
             FlameCTAButton(
               label: 'Start Quest  ⚡',
               onPressed: onStart,
