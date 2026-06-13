@@ -176,8 +176,7 @@ class _QuestScreenState extends ConsumerState<QuestScreen> {
       };
 
 void _startSession() {
-    Navigator.push(
-      context,
+    Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(
         builder: (_) => SparkSessionScreen(
           passageId: _passageId,

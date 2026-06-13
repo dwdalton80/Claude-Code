@@ -83,7 +83,8 @@ class _SparkSessionScreenState extends ConsumerState<SparkSessionScreen>
           .doc(today)
           .collection(widget.passageId)
           .doc(widget.version)
-          .get();
+          .get()
+          .timeout(const Duration(seconds: 5));
 
       if (snap.exists && mounted) {
         final data = snap.data()!;
