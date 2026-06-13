@@ -46,3 +46,4 @@ app.*.map.json
 serviceAccountKey.json
 functions/.env
 serviceAccountKey.json
+scripts/gen_quiz.js
