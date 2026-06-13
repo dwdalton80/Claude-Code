@@ -486,6 +486,34 @@ async function getTodaysPassages(): Promise<Array<{ id: string; text: string; re
   ];
 }
 
+// ── HTTPS Callable: Ask Verse Question ───────────────────────────────────────
+
+export const askVerseQuestion = functions.https.onCall(async (request) => {
+  const raw = (request as any).data ?? request ?? {};
+  const { verseRef, verseText, question } = raw as {
+    verseRef: string;
+    verseText: string;
+    question: string;
+  };
+
+  const client = getClaudeClient();
+  const response = await client.messages.create({
+    model: MODELS.haiku,
+    max_tokens: 400,
+    system:
+      "You are a helpful Bible study assistant. The user is reading a verse and has a question. Give a clear, insightful answer in 2–4 sentences. Be direct and encouraging — not preachy.",
+    messages: [
+      {
+        role: "user",
+        content: `Verse: ${verseRef} — "${verseText}"\n\nQuestion: ${question}`,
+      },
+    ],
+  });
+
+  const answer = (response.content[0] as { text: string }).text;
+  return { answer };
+});
+
 // ── HTTPS Callable: Word Study ────────────────────────────────────────────────
 export const getWordStudy = functions.https.onCall(async (request) => {
   const raw = (request as any).data ?? request ?? {};

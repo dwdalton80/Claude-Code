@@ -12,8 +12,7 @@ export function getClaudeClient(): Anthropic {
 }
 
 export const MODELS = {
-  // Primary model for all real-time AI calls
-  haiku: "claude-haiku-4-5",
+  haiku: "claude-haiku-4-5-20251001",
 } as const;
 
 export type StudyLevel = "beginner" | "growing" | "scholar";
