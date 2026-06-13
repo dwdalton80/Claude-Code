@@ -235,8 +235,15 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
         highlights: _highlights,
         onHighlight: (color) {
           final verseKey = '${_currentBook}_${_currentChapter}_${verse.id}';
-          if (mounted) setState(() => _highlights[verseKey] = color.name);
-          _db.saveHighlight(uid: widget.uid, verseId: verseKey, color: color.name);
+          final existing = _highlights[verseKey];
+          if (existing == color.name) {
+            // Tap same color = remove highlight
+            if (mounted) setState(() => _highlights.remove(verseKey));
+            _db.clearHighlight(uid: widget.uid, verseId: verseKey);
+          } else {
+            if (mounted) setState(() => _highlights[verseKey] = color.name);
+            _db.saveHighlight(uid: widget.uid, verseId: verseKey, color: color.name);
+          }
           Navigator.pop(context);
         },
         onCopy: () {

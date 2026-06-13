@@ -137,6 +137,15 @@ class FirestoreService {
 
   // ── Highlights ──────────────────────────────────────────────────────────
 
+  Future<void> clearHighlight({required String uid, required String verseId}) async {
+    await _db
+        .collection('highlights')
+        .doc(uid)
+        .collection('verses')
+        .doc(verseId)
+        .delete();
+  }
+
   Future<void> saveHighlight({
     required String uid,
     required String verseId,

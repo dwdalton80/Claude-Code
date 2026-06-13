@@ -272,6 +272,7 @@ void _exportPdf(BuildContext context) async {
   }
   void _showSettings(BuildContext context) {
     showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       backgroundColor: const Color(0xFF1E2235),
       shape: const RoundedRectangleBorder(
@@ -301,6 +302,7 @@ void _exportPdf(BuildContext context) async {
                 await launchUrl(Uri.parse('https://dwdalton80.github.io/studyfire-site'), mode: LaunchMode.externalApplication);
               },
             ),
+            const _FocusCompanionToggle(),
             ListTile(
               leading: const Icon(Icons.picture_as_pdf_outlined, color: Colors.white70),
               title: const Text('Export Journal as PDF', style: TextStyle(color: Colors.white)),
@@ -683,5 +685,52 @@ class _SectionDivider extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(height: 8, color: AppColors.surface.withOpacity(0.5));
+  }
+}
+
+class _FocusCompanionToggle extends StatefulWidget {
+  const _FocusCompanionToggle();
+  @override
+  State<_FocusCompanionToggle> createState() => _FocusCompanionToggleState();
+}
+
+class _FocusCompanionToggleState extends State<_FocusCompanionToggle> {
+  bool _enabled = false;
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (uid.isEmpty) return;
+    final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+    final prefs = (doc.data()?['preferences'] as Map?) ?? {};
+    if (mounted) setState(() {
+      _enabled = prefs['focusCompanion'] == true;
+      _loaded = true;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_loaded) return const SizedBox.shrink();
+    return SwitchListTile(
+      secondary: const Icon(Icons.wb_sunny_outlined, color: Colors.white70),
+      title: const Text('Morning Verse Notification', style: TextStyle(color: Colors.white)),
+      subtitle: const Text('Daily at 9:30am', style: TextStyle(color: Colors.white38, fontSize: 12)),
+      value: _enabled,
+      activeColor: const Color(0xFFFF6B00),
+      onChanged: (val) async {
+        setState(() => _enabled = val);
+        final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+        await FirebaseFirestore.instance.collection('users').doc(uid).set({
+          'preferences': {'focusCompanion': val}
+        }, SetOptions(merge: true));
+      },
+    );
   }
 }
