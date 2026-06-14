@@ -32,6 +32,10 @@ service cloud.firestore {
       match /debriefUsage/{month} {
         allow read, write: if isOwner(uid);
       }
+
+      match /notes/{verseId} {
+        allow read, write: if isOwner(uid);
+      }
     }
 
     // ── Bible (read-only for all authenticated users) ─────────────────────────

@@ -548,3 +548,27 @@ Return ONLY this JSON:
   const end = text.lastIndexOf('}');
   return JSON.parse(text.substring(start, end + 1));
 });
+
+// ── HTTPS Callable: Ask Verse Question ───────────────────────────────────────
+export const askVerseQuestion = functions.https.onCall(async (request) => {
+  const raw = (request as any).data ?? request ?? {};
+  const { verseRef, verseText, question } = raw;
+
+  if (!verseRef || !question) {
+    throw new functions.https.HttpsError("invalid-argument", "Missing verseRef or question");
+  }
+
+  const client = getClaudeClient();
+  const response = await client.messages.create({
+    model: MODELS.haiku,
+    max_tokens: 400,
+    system: "You are a helpful Bible study assistant. Give clear, practical answers in 2-4 sentences. Be warm and accessible.",
+    messages: [{
+      role: "user",
+      content: `Verse: ${verseRef} - "${verseText}"\n\nQuestion: ${question}`
+    }]
+  });
+
+  const answer = (response.content[0] as any).text;
+  return { answer };
+});

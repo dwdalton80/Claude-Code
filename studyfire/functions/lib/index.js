@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getWordStudy = exports.onStreakMilestone = exports.onMemoryVerseMastered = exports.onBadgeEarned = exports.registerFcmToken = exports.updateMemoryVerse = exports.recordSessionEnd = exports.suggestTitle = exports.generateDebrief = exports.getAiStudy = exports.sendDailyGroupDigests = exports.sendMorningFocusCompanion = exports.sendEveningStreakReminders = exports.weeklyGraceReplenish = exports.generateDailyCache = exports.generateDailySpark = void 0;
+exports.askVerseQuestion = exports.getWordStudy = exports.onStreakMilestone = exports.onMemoryVerseMastered = exports.onBadgeEarned = exports.registerFcmToken = exports.updateMemoryVerse = exports.recordSessionEnd = exports.suggestTitle = exports.generateDebrief = exports.getAiStudy = exports.sendDailyGroupDigests = exports.sendMorningFocusCompanion = exports.sendEveningStreakReminders = exports.weeklyGraceReplenish = exports.generateDailyCache = exports.generateDailySpark = void 0;
 const functions = __importStar(require("firebase-functions/v1"));
 const admin = __importStar(require("firebase-admin"));
 const spark_questions_1 = require("./claude/spark_questions");
@@ -461,5 +461,25 @@ Return ONLY this JSON:
     const start = text.indexOf('{');
     const end = text.lastIndexOf('}');
     return JSON.parse(text.substring(start, end + 1));
+});
+// ── HTTPS Callable: Ask Verse Question ───────────────────────────────────────
+exports.askVerseQuestion = functions.https.onCall(async (request) => {
+    const raw = request.data ?? request ?? {};
+    const { verseRef, verseText, question } = raw;
+    if (!verseRef || !question) {
+        throw new functions.https.HttpsError("invalid-argument", "Missing verseRef or question");
+    }
+    const client = (0, client_1.getClaudeClient)();
+    const response = await client.messages.create({
+        model: client_1.MODELS.haiku,
+        max_tokens: 400,
+        system: "You are a helpful Bible study assistant. Give clear, practical answers in 2-4 sentences. Be warm and accessible.",
+        messages: [{
+                role: "user",
+                content: `Verse: ${verseRef} - "${verseText}"\n\nQuestion: ${question}`
+            }]
+    });
+    const answer = response.content[0].text;
+    return { answer };
 });
 //# sourceMappingURL=index.js.map
