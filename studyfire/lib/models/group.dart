@@ -200,6 +200,7 @@ class GroupQuestion {
   final String authorName;
   final String question;
   final String? scriptureRef;
+  final String? verseText;
   final bool resolved;
   final DateTime timestamp;
   final int commentCount;
@@ -210,6 +211,7 @@ class GroupQuestion {
     required this.authorName,
     required this.question,
     this.scriptureRef,
+    this.verseText,
     required this.resolved,
     required this.timestamp,
     required this.commentCount,
@@ -219,12 +221,13 @@ class GroupQuestion {
     final data = doc.data() as Map<String, dynamic>;
     return GroupQuestion(
       id: doc.id,
-      authorUid: data['authorUid'] ?? '',
+      authorUid: data['authorUid'] ?? data['authorId'] ?? '',
       authorName: data['authorName'] ?? '',
       question: data['question'] ?? '',
-      scriptureRef: data['scriptureRef'],
+      scriptureRef: data['scriptureRef'] ?? data['verseRef'],
+      verseText: data['verseText'],
       resolved: data['resolved'] ?? false,
-      timestamp: (data['timestamp'] as Timestamp).toDate(),
+      timestamp: data['timestamp'] != null ? (data['timestamp'] as Timestamp).toDate() : DateTime.now(),
       commentCount: data['commentCount'] ?? 0,
     );
   }
@@ -234,6 +237,7 @@ class GroupQuestion {
         'authorName': authorName,
         'question': question,
         'scriptureRef': scriptureRef,
+        'verseText': verseText,
         'resolved': resolved,
         'timestamp': Timestamp.fromDate(timestamp),
         'commentCount': commentCount,

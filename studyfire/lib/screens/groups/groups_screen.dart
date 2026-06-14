@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/colors.dart';
@@ -566,6 +568,24 @@ class _QuestionsTab extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(q.question, style: AppTypography.bodyLarge),
+                  if (q.scriptureRef != null) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: AppColors.warmGold.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppColors.warmGold.withOpacity(0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.menu_book_outlined, size: 14, color: AppColors.warmGold),
+                          const SizedBox(width: 6),
+                          Text(q.scriptureRef!, style: AppTypography.labelSmall.copyWith(color: AppColors.warmGold)),
+                        ],
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 8),
                   Text(
                     'Asked by ${q.authorName}',
@@ -680,20 +700,23 @@ class _PostQuestionSheet extends StatefulWidget {
 
 class _PostQuestionSheetState extends State<_PostQuestionSheet> {
   final _ctrl = TextEditingController();
+  final _verseRefCtrl = TextEditingController();
+  final _verseTextCtrl = TextEditingController();
   bool _submitting = false;
+  bool _attachVerse = false;
 
   @override
   void dispose() {
     _ctrl.dispose();
+    _verseRefCtrl.dispose();
+    _verseTextCtrl.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        24, 24, 24, MediaQuery.of(context).viewInsets.bottom + 24,
-      ),
+    return SingleChildScrollView(
+      padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(context).viewInsets.bottom + 24),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -714,6 +737,38 @@ class _PostQuestionSheetState extends State<_PostQuestionSheet> {
               hintText: 'What question is on your heart?',
             ),
           ),
+          const SizedBox(height: 12),
+          GestureDetector(
+            onTap: () => setState(() => _attachVerse = !_attachVerse),
+            child: Row(
+              children: [
+                Icon(_attachVerse ? Icons.check_box : Icons.check_box_outline_blank,
+                    color: AppColors.warmGold, size: 20),
+                const SizedBox(width: 8),
+                Text('Attach a verse', style: AppTypography.bodySmall.copyWith(color: AppColors.warmGold)),
+              ],
+            ),
+          ),
+          if (_attachVerse) ...[
+            const SizedBox(height: 12),
+            TextField(
+              controller: _verseRefCtrl,
+              style: AppTypography.bodyMedium,
+              decoration: const InputDecoration(
+                hintText: 'Reference (e.g. John 3:16)',
+                prefixIcon: Icon(Icons.menu_book_outlined),
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _verseTextCtrl,
+              maxLines: 3,
+              style: AppTypography.bodyMedium,
+              decoration: const InputDecoration(
+                hintText: 'Verse text (optional)',
+              ),
+            ),
+          ],
           const SizedBox(height: 16),
           FlameCTAButton(
             label: 'Post question',
@@ -722,13 +777,22 @@ class _PostQuestionSheetState extends State<_PostQuestionSheet> {
               if (_ctrl.text.trim().isEmpty) return;
               setState(() => _submitting = true);
               try {
-                await FirestoreService().postFeedMessage(
-                  widget.groupId,
-                  widget.uid,
-                  'Me',
-                  FeedItemType.sharedQuestion,
-                  _ctrl.text.trim(),
-                );
+                final user = FirebaseAuth.instance.currentUser;
+                final authorName = user?.displayName ?? user?.email?.split('@')[0] ?? 'Member';
+                await FirebaseFirestore.instance
+                    .collection('groupQuestions')
+                    .doc(widget.groupId)
+                    .collection('questions')
+                    .add({
+                  'question': _ctrl.text.trim(),
+                  'authorId': widget.uid,
+                  'authorName': authorName,
+                  'timestamp': FieldValue.serverTimestamp(),
+                  if (_attachVerse && _verseRefCtrl.text.trim().isNotEmpty)
+                    'scriptureRef': _verseRefCtrl.text.trim(),
+                  if (_attachVerse && _verseTextCtrl.text.trim().isNotEmpty)
+                    'verseText': _verseTextCtrl.text.trim(),
+                });
                 if (context.mounted) Navigator.pop(context);
               } catch (_) {
                 setState(() => _submitting = false);
