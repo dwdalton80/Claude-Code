@@ -58,12 +58,6 @@ class XpService {
       );
     });
 
-    // Write any newly earned badges — triggers onBadgeEarned Cloud Function
-    // which auto-posts to groups. Use set with merge so re-earning is idempotent.
-    if (result.newBadges.isNotEmpty) {
-      await Future.wait(result.newBadges.map((b) => awardBadge(uid, b)));
-    }
-
     return result;
   }
 

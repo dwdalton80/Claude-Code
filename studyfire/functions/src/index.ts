@@ -331,6 +331,44 @@ function checkXpBadges(oldXp: number, newXp: number): string[] {
     .map(([, badge]) => badge);
 }
 
+// ── Firestore Trigger: Award XP Milestone Badges ─────────────────────────────
+
+/**
+ * Fires on every users/{uid} write. When profile.xp increases past a milestone
+ * threshold, writes the badge to badges/{uid}/earned/{badgeId}. Server-side so
+ * clients cannot self-award badges by writing directly to Firestore.
+ */
+export const onXpUpdated = functions.firestore
+  .document("users/{uid}")
+  .onUpdate(async (change, context) => {
+    const oldXp = (change.before.data()?.profile?.xp as number) ?? 0;
+    const newXp = (change.after.data()?.profile?.xp as number) ?? 0;
+
+    if (newXp <= oldXp) return; // XP didn't increase — nothing to check
+
+    const uid = context.params.uid;
+    const newBadges = checkXpBadges(oldXp, newXp);
+    if (newBadges.length === 0) return;
+
+    await Promise.all(
+      newBadges.map((badge) =>
+        db
+          .collection("badges")
+          .doc(uid)
+          .collection("earned")
+          .doc(badge)
+          .set(
+            {
+              earnedAt: admin.firestore.FieldValue.serverTimestamp(),
+              shared: false,
+              shareCount: 0,
+            },
+            { merge: true } // idempotent — safe if trigger fires more than once
+          )
+      )
+    );
+  });
+
 // ── Firestore Triggers: Auto-Post to Group Feed ──────────────────────────────
 
 /**
@@ -485,34 +523,6 @@ async function getTodaysPassages(): Promise<Array<{ id: string; text: string; re
     },
   ];
 }
-
-// ── HTTPS Callable: Ask Verse Question ───────────────────────────────────────
-
-export const askVerseQuestion = functions.https.onCall(async (request) => {
-  const raw = (request as any).data ?? request ?? {};
-  const { verseRef, verseText, question } = raw as {
-    verseRef: string;
-    verseText: string;
-    question: string;
-  };
-
-  const client = getClaudeClient();
-  const response = await client.messages.create({
-    model: MODELS.haiku,
-    max_tokens: 400,
-    system:
-      "You are a helpful Bible study assistant. The user is reading a verse and has a question. Give a clear, insightful answer in 2–4 sentences. Be direct and encouraging — not preachy.",
-    messages: [
-      {
-        role: "user",
-        content: `Verse: ${verseRef} — "${verseText}"\n\nQuestion: ${question}`,
-      },
-    ],
-  });
-
-  const answer = (response.content[0] as { text: string }).text;
-  return { answer };
-});
 
 // ── HTTPS Callable: Word Study ────────────────────────────────────────────────
 export const getWordStudy = functions.https.onCall(async (request) => {
