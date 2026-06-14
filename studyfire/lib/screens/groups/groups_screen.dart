@@ -557,7 +557,11 @@ class _QuestionsTab extends ConsumerWidget {
           separatorBuilder: (_, __) => const SizedBox(height: 12),
           itemBuilder: (_, i) {
             final q = questions[i];
-            return Container(
+            return GestureDetector(
+              onTap: () => Navigator.push(context, MaterialPageRoute(
+                builder: (_) => _QuestionDetailScreen(question: q, groupId: group.id, uid: uid),
+              )),
+              child: Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 color: AppColors.cardDark,
@@ -593,7 +597,7 @@ class _QuestionsTab extends ConsumerWidget {
                   ),
                 ],
               ),
-            );
+            ));
           },
         );
       },
@@ -798,6 +802,219 @@ class _PostQuestionSheetState extends State<_PostQuestionSheet> {
                 setState(() => _submitting = false);
               }
             },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Question Detail Screen ────────────────────────────────────────────────────
+
+class _QuestionDetailScreen extends StatefulWidget {
+  final GroupQuestion question;
+  final String groupId;
+  final String uid;
+
+  const _QuestionDetailScreen({
+    required this.question,
+    required this.groupId,
+    required this.uid,
+  });
+
+  @override
+  State<_QuestionDetailScreen> createState() => _QuestionDetailScreenState();
+}
+
+class _QuestionDetailScreenState extends State<_QuestionDetailScreen> {
+  final _ctrl = TextEditingController();
+  bool _submitting = false;
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _postComment() async {
+    if (_ctrl.text.trim().isEmpty) return;
+    setState(() => _submitting = true);
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      final authorName = user?.displayName ?? user?.email?.split('@')[0] ?? 'Member';
+      final batch = FirebaseFirestore.instance.batch();
+      
+      final commentRef = FirebaseFirestore.instance
+          .collection('groupComments')
+          .doc(widget.groupId + '_' + widget.question.id)
+          .collection('comments')
+          .doc();
+      
+      batch.set(commentRef, {
+        'authorId': widget.uid,
+        'authorName': authorName,
+        'text': _ctrl.text.trim(),
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+
+      // Increment comment count
+      batch.update(
+        FirebaseFirestore.instance
+            .collection('groupQuestions')
+            .doc(widget.groupId)
+            .collection('questions')
+            .doc(widget.question.id),
+        {'commentCount': FieldValue.increment(1)},
+      );
+
+      await batch.commit();
+      _ctrl.clear();
+      if (mounted) setState(() => _submitting = false);
+    } catch (e) {
+      debugPrint('Comment error: \$e');
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.deepSlate,
+      appBar: AppBar(title: const Text('Discussion')),
+      body: Column(
+        children: [
+          // Question header
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            color: AppColors.cardDark,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(widget.question.question, style: AppTypography.bodyLarge),
+                if (widget.question.scriptureRef != null) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: AppColors.warmGold.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppColors.warmGold.withOpacity(0.3)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.menu_book_outlined, size: 14, color: AppColors.warmGold),
+                        const SizedBox(width: 6),
+                        Text(widget.question.scriptureRef!, style: AppTypography.labelSmall.copyWith(color: AppColors.warmGold)),
+                      ],
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 6),
+                Text('Asked by ${widget.question.authorName}',
+                    style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary)),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+
+          // Comments list
+          Expanded(
+            child: StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('groupComments')
+                  .doc(widget.groupId + '_' + widget.question.id)
+                  .collection('comments')
+                  .orderBy('timestamp', descending: false)
+                  .snapshots(),
+              builder: (context, snap) {
+                if (snap.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                final docs = snap.data?.docs ?? [];
+                if (docs.isEmpty) {
+                  return Center(
+                    child: Text('No replies yet — be the first!',
+                        style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary)),
+                  );
+                }
+                return ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: docs.length,
+                  itemBuilder: (_, i) {
+                    final data = docs[i].data() as Map<String, dynamic>;
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          CircleAvatar(
+                            radius: 16,
+                            backgroundColor: AppColors.warmGold.withOpacity(0.2),
+                            child: Text(
+                              (data['authorName'] as String? ?? 'M')[0].toUpperCase(),
+                              style: const TextStyle(color: AppColors.warmGold, fontSize: 12),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Flexible(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: AppColors.cardDark,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(data['authorName'] ?? 'Member',
+                                      style: AppTypography.labelSmall),
+                                  const SizedBox(height: 4),
+                                  Text(data['text'] ?? '',
+                                      style: AppTypography.bodyMedium),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+
+          // Comment input
+          Container(
+            padding: EdgeInsets.fromLTRB(12, 8, 12, MediaQuery.of(context).padding.bottom + 8),
+            decoration: BoxDecoration(
+              color: AppColors.cardDark,
+              border: Border(top: BorderSide(color: AppColors.surface)),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _ctrl,
+                    style: AppTypography.bodyMedium,
+                    decoration: const InputDecoration(
+                      hintText: 'Add a reply…',
+                      border: InputBorder.none,
+                      contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                    ),
+                    onSubmitted: (_) => _postComment(),
+                  ),
+                ),
+                _submitting
+                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                    : IconButton(
+                        icon: const Icon(Icons.send_rounded, color: AppColors.warmGold),
+                        onPressed: _postComment,
+                      ),
+              ],
+            ),
           ),
         ],
       ),

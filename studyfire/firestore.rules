@@ -127,12 +127,10 @@ service cloud.firestore {
     }
 
     // ── Group comments ─────────────────────────────────────────────────────────
-    match /groupComments/{groupId}/{feedItemId}/comments/{commentId} {
-      allow read: if isSignedIn() &&
-        exists(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid));
-      allow create: if isSignedIn() &&
-        exists(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid));
-      allow update, delete: if isSignedIn() && request.auth.uid == resource.data.authorUid;
+    match /groupComments/{docId}/comments/{commentId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if isSignedIn() && request.auth.uid == resource.data.authorId;
     }
 
     // ── Group questions ────────────────────────────────────────────────────────
