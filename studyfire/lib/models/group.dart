@@ -34,7 +34,7 @@ class Group {
     final data = doc.data() as Map<String, dynamic>;
     return Group(
       id: doc.id,
-      name: data['name'] ?? '',
+      name: data['displayName'] ?? data['name'] ?? 'Member',
       topic: data['topic'] ?? '',
       description: data['description'],
       endDate: (data['endDate'] as Timestamp?)?.toDate(),
@@ -92,7 +92,7 @@ class GroupMember {
     final data = doc.data() as Map<String, dynamic>;
     return GroupMember(
       uid: doc.id,
-      name: data['name'] ?? '',
+      name: data['displayName'] ?? data['name'] ?? 'Member',
       avatarUrl: data['avatarUrl'],
       role: GroupRole.values.firstWhere(
         (e) => e.name == data['role'],

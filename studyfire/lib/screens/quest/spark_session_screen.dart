@@ -10,6 +10,7 @@ import '../../core/services/streak_service.dart';
 import '../../widgets/common/flame_cta_button.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../models/group.dart';
+import '../../core/services/group_activity_service.dart';
 import '../../app.dart';
 
 class SparkSessionScreen extends ConsumerStatefulWidget {
@@ -160,8 +161,10 @@ class _SparkSessionScreenState extends ConsumerState<SparkSessionScreen>
       final user = FirebaseAuth.instance.currentUser;
       final authorName = user?.displayName ?? user?.email?.split('@')[0] ?? 'Member';
       final sparkRef = widget.reference;
-      FirestoreService().postActivityToUserGroups(uid, authorName, FeedItemType.streakMilestone, {
-        'text': '\$authorName completed a Spark session on \$sparkRef 🔥',
+      // Update weekly XP in all groups
+      GroupActivityService().updateMemberWeeklyXp(uid, XpRewards.completeSparkSession).catchError((_) {});
+      GroupActivityService().postActivityToUserGroups(uid, authorName, FeedItemType.streakMilestone, {
+        'text': authorName + ' completed a Spark session on ' + sparkRef + ' 🔥',
         'reference': sparkRef,
         'xp': XpRewards.completeSparkSession,
       }).catchError((_) {});
