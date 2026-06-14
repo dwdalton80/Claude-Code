@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.askVerseQuestion = exports.getWordStudy = exports.onStreakMilestone = exports.onMemoryVerseMastered = exports.onBadgeEarned = exports.registerFcmToken = exports.updateMemoryVerse = exports.recordSessionEnd = exports.suggestTitle = exports.generateDebrief = exports.getAiStudy = exports.sendDailyGroupDigests = exports.sendMorningFocusCompanion = exports.sendEveningStreakReminders = exports.weeklyGraceReplenish = exports.generateDailyCache = exports.generateDailySpark = void 0;
+exports.askVerseQuestion = exports.getWordStudy = exports.onStreakMilestone = exports.onMemoryVerseMastered = exports.onBadgeEarned = exports.onXpUpdated = exports.registerFcmToken = exports.updateMemoryVerse = exports.recordSessionEnd = exports.suggestTitle = exports.generateDebrief = exports.getAiStudy = exports.sendDailyGroupDigests = exports.sendMorningFocusCompanion = exports.sendEveningStreakReminders = exports.weeklyGraceReplenish = exports.generateDailyCache = exports.generateDailySpark = void 0;
 const functions = __importStar(require("firebase-functions/v1"));
 const admin = __importStar(require("firebase-admin"));
 const spark_questions_1 = require("./claude/spark_questions");
@@ -299,6 +299,35 @@ function checkXpBadges(oldXp, newXp) {
         .filter(([threshold]) => oldXp < Number(threshold) && newXp >= Number(threshold))
         .map(([, badge]) => badge);
 }
+// ── Firestore Trigger: Award XP Milestone Badges ─────────────────────────────
+/**
+ * Fires on every users/{uid} write. When profile.xp increases past a milestone
+ * threshold, writes the badge to badges/{uid}/earned/{badgeId}. Server-side so
+ * clients cannot self-award badges by writing directly to Firestore.
+ */
+exports.onXpUpdated = functions.firestore
+    .document("users/{uid}")
+    .onUpdate(async (change, context) => {
+    const oldXp = change.before.data()?.profile?.xp ?? 0;
+    const newXp = change.after.data()?.profile?.xp ?? 0;
+    if (newXp <= oldXp)
+        return; // XP didn't increase — nothing to check
+    const uid = context.params.uid;
+    const newBadges = checkXpBadges(oldXp, newXp);
+    if (newBadges.length === 0)
+        return;
+    await Promise.all(newBadges.map((badge) => db
+        .collection("badges")
+        .doc(uid)
+        .collection("earned")
+        .doc(badge)
+        .set({
+        earnedAt: admin.firestore.FieldValue.serverTimestamp(),
+        shared: false,
+        shareCount: 0,
+    }, { merge: true } // idempotent — safe if trigger fires more than once
+    )));
+});
 // ── Firestore Triggers: Auto-Post to Group Feed ──────────────────────────────
 /**
  * When a badge is earned (written by recordSessionEnd), auto-post to all groups

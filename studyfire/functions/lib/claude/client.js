@@ -18,8 +18,7 @@ function getClaudeClient() {
     return _client;
 }
 exports.MODELS = {
-    // Primary model for all real-time AI calls
-    haiku: "claude-haiku-4-5",
+    haiku: "claude-haiku-4-5-20251001",
 };
 function studyLevelInstructions(level) {
     return {

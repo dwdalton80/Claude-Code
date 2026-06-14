@@ -65,13 +65,15 @@ Rules:
 - Explanations are warm and educational, never condescending
 - Include a mix of difficulty levels
 
+IMPORTANT: correctAnswer must be the FULL option string, matching one of the options exactly.
+
 Return ONLY valid JSON array:
 [
   {
     "type": "multiple_choice",
     "question": "...",
-    "options": ["A", "B", "C", "D"],
-    "correctAnswer": "A",
+    "options": ["A. First option text", "B. Second option text", "C. Third option text", "D. Fourth option text"],
+    "correctAnswer": "A. First option text",
     "explanation": "One sentence explanation of why this is correct.",
     "topicTag": "${topicTag}",
     "passageRef": "Romans 8:28",
