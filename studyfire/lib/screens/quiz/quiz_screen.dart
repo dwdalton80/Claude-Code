@@ -243,6 +243,10 @@ class _QuizScreenState extends ConsumerState<QuizScreen> {
     final xp = XpRewards.completeQuiz + (perfect ? XpRewards.perfectScoreBonus : 0);
     _xpService.accumulateXp(widget.uid, xp);
     _streakService.recordActivity(widget.uid).catchError((_) {});
+    // Track questionsAnswered
+    FirebaseFirestore.instance.collection('users').doc(widget.uid).set({
+      'profile': {'questionsAnswered': FieldValue.increment(_score)}
+    }, SetOptions(merge: true)).catchError((_) {});
     setState(() {
       _totalXp = xp;
       _burstXp = xp;

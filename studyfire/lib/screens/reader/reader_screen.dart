@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:go_router/go_router.dart';
@@ -1233,6 +1234,13 @@ class _WordStudySheetState extends State<_WordStudySheet> {
   }
 
   Future<void> _load() async {
+    // Track wordsExplored
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid != null) {
+      FirebaseFirestore.instance.collection('users').doc(uid).set({
+        'profile': {'wordsExplored': FieldValue.increment(1)}
+      }, SetOptions(merge: true)).catchError((_) {});
+    }
     try {
       final fn = FirebaseFunctions.instanceFor(region: 'us-central1')
           .httpsCallable('getWordStudy');

@@ -8,34 +8,76 @@ import '../../core/services/firestore_service.dart';
 import '../../core/services/streak_service.dart';
 import '../../models/journal_entry.dart';
 import '../../widgets/common/flame_cta_button.dart';
+import '../../models/memory_verse.dart';
+import '../memory_verse/memory_verse_screen.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
-class JournalScreen extends ConsumerWidget {
+class JournalScreen extends ConsumerStatefulWidget {
   const JournalScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<JournalScreen> createState() => _JournalScreenState();
+}
+
+class _JournalScreenState extends ConsumerState<JournalScreen> with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+    _tabController.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.deepSlate,
       appBar: AppBar(
         title: const Text('Notes'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.search),
-            onPressed: () => _showSearch(context),
-          ),
+          if (_tabController.index == 0)
+            IconButton(
+              icon: const Icon(Icons.search),
+              onPressed: () => _showSearch(context),
+            ),
         ],
+        bottom: TabBar(
+          controller: _tabController,
+          indicatorColor: AppColors.warmGold,
+          labelColor: AppColors.warmGold,
+          unselectedLabelColor: AppColors.textSecondary,
+          tabs: const [
+            Tab(text: 'Journal'),
+            Tab(text: 'Memory Verses'),
+          ],
+        ),
       ),
-      body: Column(
+      body: TabBarView(
+        controller: _tabController,
         children: [
-          _FilterChips(),
-          const Expanded(child: _JournalList()),
+          Column(
+            children: [
+              _FilterChips(),
+              const Expanded(child: _JournalList()),
+            ],
+          ),
+          const _MemoryVerseList(),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _openNewNote(context),
-        backgroundColor: AppColors.flameOrange,
-        child: const Icon(Icons.add, color: Colors.white),
-      ),
+      floatingActionButton: _tabController.index == 0
+          ? FloatingActionButton(
+              onPressed: () => _openNewNote(context),
+              backgroundColor: AppColors.flameOrange,
+              child: const Icon(Icons.add, color: Colors.white),
+            )
+          : null,
     );
   }
 
@@ -641,6 +683,123 @@ class _ScriptureRefRow extends StatelessWidget {
               )),
         ],
       ),
+    );
+  }
+}
+
+// ── Memory Verse List ─────────────────────────────────────────────────────────
+
+class _MemoryVerseList extends StatefulWidget {
+  const _MemoryVerseList();
+
+  @override
+  State<_MemoryVerseList> createState() => _MemoryVerseListState();
+}
+
+class _MemoryVerseListState extends State<_MemoryVerseList> {
+  List<dynamic> _verses = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final snap = await FirebaseFirestore.instance
+        .collection('memoryVerses')
+        .doc(uid)
+        .collection('verses')
+        .get();
+    final verses = snap.docs.map((d) => MemoryVerse.fromFirestore(d)).toList();
+    if (mounted) setState(() {
+      _verses = verses;
+      _loading = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) return const Center(child: CircularProgressIndicator());
+    if (_verses.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Text('🧠', style: TextStyle(fontSize: 48)),
+              const SizedBox(height: 16),
+              Text('No memory verses yet', style: AppTypography.bodyLarge),
+              const SizedBox(height: 8),
+              Text(
+                'Long press any verse in the Reader and tap "Add to Memory Verse" to start memorizing.',
+                style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: _verses.length,
+      itemBuilder: (_, i) {
+        final verse = _verses[i];
+        final mastered = verse.currentStage == MemoryVerseStage.stage5;
+        return Card(
+          color: AppColors.cardDark,
+          margin: const EdgeInsets.only(bottom: 12),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          child: ListTile(
+            contentPadding: const EdgeInsets.all(16),
+            title: Text(verse.reference, style: AppTypography.labelMedium.copyWith(color: AppColors.warmGold)),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 4),
+                Text(verse.text, style: AppTypography.bodySmall, maxLines: 2, overflow: TextOverflow.ellipsis),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    ...List.generate(5, (s) => Container(
+                      width: 24, height: 6,
+                      margin: const EdgeInsets.only(right: 4),
+                      decoration: BoxDecoration(
+                        color: s < verse.currentStage.index
+                            ? AppColors.warmGold
+                            : AppColors.surface,
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                    )),
+                    const SizedBox(width: 8),
+                    Text(
+                      mastered ? '✅ Mastered' : 'Stage ${verse.currentStage.index}/5',
+                      style: AppTypography.bodySmall.copyWith(
+                        color: mastered ? Colors.green : AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            trailing: mastered
+                ? null
+                : IconButton(
+                    icon: const Icon(Icons.play_arrow, color: AppColors.warmGold),
+                    onPressed: () {
+                      Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => MemoryVerseScreen(verse: verse, uid: FirebaseAuth.instance.currentUser!.uid),
+                      )).then((_) => _load());
+                    },
+                  ),
+          ),
+        );
+      },
     );
   }
 }

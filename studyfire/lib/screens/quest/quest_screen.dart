@@ -98,7 +98,10 @@ class _QuestScreenState extends ConsumerState<QuestScreen> {
         final profile = data['profile'] as Map<String, dynamic>? ?? {};
         setState(() {
           _streak = profile['streak'] as int? ?? 0;
-          _dailyXp = profile['xp'] as int? ?? 0;
+          // Daily XP: reset if date changed
+          final today = DateTime.now().toIso8601String().split('T')[0];
+          final xpDate = profile['xpTodayDate'] as String? ?? '';
+          _dailyXp = xpDate == today ? (profile['xpToday'] as int? ?? 0) : 0;
         });
       }
     });

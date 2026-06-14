@@ -39,9 +39,15 @@ class XpService {
 
       final newBadges = _checkBadgeMilestones(currentXp, newXp);
 
+      final today = DateTime.now().toIso8601String().split('T')[0];
+      final xpDate = (profile['xpTodayDate'] as String?) ?? '';
+      final currentDailyXp = xpDate == today ? ((profile['xpToday'] as int?) ?? 0) : 0;
+
       tx.update(ref, {
         'profile.xp': newXp,
         'profile.level': newLevel,
+        'profile.xpToday': currentDailyXp + pending,
+        'profile.xpTodayDate': today,
       });
 
       result = XpResult(

@@ -189,7 +189,7 @@ class _Stage1ReadItState extends State<_Stage1ReadIt> {
       child: Column(
         children: [
           Text(
-            'Read it 3 times',
+            'Tap the verse each time you read it',
             style: AppTypography.bodyMedium.copyWith(color: AppColors.textSecondary),
           ),
           const SizedBox(height: 8),
@@ -197,12 +197,18 @@ class _Stage1ReadItState extends State<_Stage1ReadIt> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: List.generate(
               3,
-              (i) => Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: Icon(
-                  i < _readCount ? Icons.circle : Icons.circle_outlined,
-                  color: i < _readCount ? AppColors.warmGold : AppColors.textSecondary,
-                  size: 12,
+              (i) => GestureDetector(
+                onTap: _readCount < 3 ? () => setState(() {
+                  _readCount++;
+                  HapticFeedback.lightImpact();
+                }) : null,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Icon(
+                    i < _readCount ? Icons.circle : Icons.circle_outlined,
+                    color: i < _readCount ? AppColors.warmGold : AppColors.textSecondary,
+                    size: 20,
+                  ),
                 ),
               ),
             ),
