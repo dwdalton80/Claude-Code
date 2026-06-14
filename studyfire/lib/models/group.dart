@@ -175,7 +175,7 @@ class FeedItem {
       authorUid: data['authorUid'] ?? '',
       authorName: data['authorName'] ?? '',
       authorAvatar: data['authorAvatar'],
-      content: Map<String, dynamic>.from(data['content'] ?? {}),
+      content: data['content'] is Map ? Map<String, dynamic>.from(data['content']) : {'text': data['content']?.toString() ?? ''},
       timestamp: (data['timestamp'] as Timestamp).toDate(),
       reactionCount: data['reactionCount'] ?? 0,
       commentCount: data['commentCount'] ?? 0,

@@ -501,6 +501,28 @@ class FirestoreService {
       'verse': match.group(3)!,
     };
   }
+
+  // Post activity to all groups the user belongs to
+  Future<void> postActivityToUserGroups(String uid, String authorName, FeedItemType type, Map<String, dynamic> content) async {
+    try {
+      final groupsSnap = await _db
+          .collection('groups')
+          .where('memberIds', arrayContains: uid)
+          .get();
+      for (final doc in groupsSnap.docs) {
+        await _db.collection('groups').doc(doc.id).collection('feed').add({
+          'authorUid': uid,
+          'authorName': authorName,
+          'type': type.name,
+          'content': content,
+          'timestamp': FieldValue.serverTimestamp(),
+        });
+        await _db.collection('groups').doc(doc.id).update({
+          'lastActivity': FieldValue.serverTimestamp(),
+        });
+      }
+    } catch (_) {}
+  }
 }
 
 // Lightweight wrapper so model fromFirestore() constructors can work on sub-documents
@@ -564,4 +586,6 @@ class SparkQuestion {
     required this.verseText,
     required this.reference,
   });
+
+  // Post activity to all groups the user belongs to
 }

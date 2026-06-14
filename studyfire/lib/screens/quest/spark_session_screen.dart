@@ -8,6 +8,8 @@ import '../../core/services/firestore_service.dart';
 import '../../core/services/xp_service.dart';
 import '../../core/services/streak_service.dart';
 import '../../widgets/common/flame_cta_button.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../../models/group.dart';
 import '../../app.dart';
 
 class SparkSessionScreen extends ConsumerStatefulWidget {
@@ -153,6 +155,16 @@ class _SparkSessionScreenState extends ConsumerState<SparkSessionScreen>
           'createdAt': FieldValue.serverTimestamp(),
         });
       }
+
+      // Post to group feeds
+      final user = FirebaseAuth.instance.currentUser;
+      final authorName = user?.displayName ?? user?.email?.split('@')[0] ?? 'Member';
+      final sparkRef = widget.reference;
+      FirestoreService().postActivityToUserGroups(uid, authorName, FeedItemType.streakMilestone, {
+        'text': '\$authorName completed a Spark session on \$sparkRef 🔥',
+        'reference': sparkRef,
+        'xp': XpRewards.completeSparkSession,
+      }).catchError((_) {});
       _firestore.collection('users').doc(uid).update({
         'profile.questionsAnswered': FieldValue.increment(1),
       }).catchError((_) {});
