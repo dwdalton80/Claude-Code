@@ -104,7 +104,7 @@ class GroupMember {
       ),
       mutedNotifications: data['mutedNotifications'] ?? false,
       weeklyXp: data['weeklyXp'] ?? 0,
-      streak: data['streak'] ?? 0,
+      streak: data['currentStreak'] ?? data['streak'] ?? 0,
       badgeCount: data['badgeCount'] ?? 0,
       versesMemorized: data['versesMemorized'] ?? 0,
     );

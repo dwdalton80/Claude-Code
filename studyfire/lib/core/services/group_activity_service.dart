@@ -9,11 +9,17 @@ class GroupActivityService {
     try {
       final authUser = FirebaseAuth.instance.currentUser;
       final displayName = authUser?.displayName ?? authUser?.email?.split('@')[0] ?? 'Member';
+      // Get current streak from user profile
+      final userDoc = await _db.collection('users').doc(uid).get();
+      final userData = userDoc.data() as Map<String, dynamic>? ?? {};
+      final profile = userData['profile'] as Map<String, dynamic>? ?? {};
+      final streak = (profile['streak'] as num?)?.toInt() ?? (userData['streak'] as num?)?.toInt() ?? 0;
       final groupsSnap = await _db.collection('groups').where('memberIds', arrayContains: uid).get();
       for (final doc in groupsSnap.docs) {
         await _db.collection('groups').doc(doc.id).collection('members').doc(uid).set({
           'weeklyXp': FieldValue.increment(xp),
           'displayName': displayName,
+          'currentStreak': streak,
         }, SetOptions(merge: true));
       }
     } catch (_) {}
