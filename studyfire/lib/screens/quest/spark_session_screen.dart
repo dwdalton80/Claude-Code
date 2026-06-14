@@ -106,6 +106,7 @@ class _SparkSessionScreenState extends ConsumerState<SparkSessionScreen>
           if (mounted) setState(() => _showResponse = true);
         });
       } else if (mounted) {
+        debugPrint("SparkSession: snap.exists=${snap.exists}, passageId=${widget.passageId}, version=${widget.version}, today=$today");
         // No cached spark — show verse only
         setState(() {
           _verseText = null;
@@ -116,6 +117,7 @@ class _SparkSessionScreenState extends ConsumerState<SparkSessionScreen>
         _progressController.forward();
       }
     } catch (e) {
+      debugPrint("SparkSession error: $e");
       if (mounted) {
         setState(() {
           _question = 'What does this passage mean for your life today?';
