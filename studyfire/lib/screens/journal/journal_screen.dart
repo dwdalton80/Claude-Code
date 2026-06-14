@@ -40,7 +40,7 @@ class _JournalScreenState extends ConsumerState<JournalScreen> with SingleTicker
     return Scaffold(
       backgroundColor: AppColors.deepSlate,
       appBar: AppBar(
-        title: const Text('Notes'),
+        title: const Text('Study'),
         actions: [
           if (_tabController.index == 0)
             IconButton(

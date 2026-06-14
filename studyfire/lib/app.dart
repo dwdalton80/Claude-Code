@@ -195,7 +195,7 @@ class AppShell extends StatelessWidget {
     (path: '/quest', label: 'Quest', icon: Icons.flash_on),
     (path: '/reader', label: 'Reader', icon: Icons.menu_book),
     (path: '/games', label: 'Games', icon: Icons.psychology),
-    (path: '/notes', label: 'Notes', icon: Icons.sticky_note_2),
+    (path: '/notes', label: 'Study', icon: Icons.sticky_note_2),
     (path: '/groups', label: 'Groups', icon: Icons.group),
     (path: '/profile', label: 'Profile', icon: Icons.person),
   ];
