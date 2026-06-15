@@ -310,8 +310,13 @@ class _CreateOrJoinSheetState extends State<_CreateOrJoinSheet> {
     try {
       await FirestoreService().joinGroupByCode(widget.uid, _codeCtrl.text.trim());
       if (context.mounted) Navigator.pop(context);
-    } catch (_) {
+    } catch (e) {
       setState(() => _submitting = false);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString().contains('Invalid') ? 'Invalid invite code. Check and try again.' : 'Could not join group. Please try again.')),
+        );
+      }
     }
   }
 }
