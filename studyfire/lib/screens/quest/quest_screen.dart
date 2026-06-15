@@ -284,9 +284,14 @@ class _QuestCard extends StatelessWidget {
               onChanged: onLengthChanged,
             ),
             const SizedBox(height: 24),
-            FlameCTAButton(
-              label: 'Start Quest  ⚡',
-              onPressed: onStart,
+            GestureDetector(
+              onTap: onStart,
+              child: Image.asset(
+                'assets/images/start_quest_button.png',
+                width: double.infinity,
+                height: 110,
+                fit: BoxFit.contain,
+              ),
             ),
           ],
         ),
