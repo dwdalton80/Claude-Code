@@ -182,8 +182,8 @@ const raw = (request as any).data ?? (request as any).body?.data ?? request ?? {
 - Real user data, photo upload
 - XP/streak real-time stream
 - Badges from Firestore, tap to share
-- Study Stats: wired — journal entries + mastered verses from Firestore; questionsAnswered/wordsExplored/versesRead read from profile fields (0 until tracking is added)
-- Books Read: wired — derived from highlights collection (books where user has highlighted ≥1 verse)
+- Study Stats: HARDCODED (pre-launch task)
+- Books Read: HARDCODED (pre-launch task)
 
 ### Settings Sheet
 - Notifications (opens iOS Settings)
@@ -225,17 +225,9 @@ const raw = (request as any).data ?? (request as any).body?.data ?? request ?? {
 ## Known Bugs & Issues
 
 ### Active
-- ~~Streak shows 0~~ — FIXED. Root cause: the live Spark session
-  (quest/spark_session_screen.dart) only called xpService.flushSession()
-  which writes XP only; it never recorded the streak. Now calls
-  StreakService.recordActivity() on completion. Also fixed a latent DST
-  bug in streak_service (yesterday computed via Duration subtraction →
-  now calendar-date math). NOTE: streak is only credited on Spark
-  completion, not on reading/quiz alone — by design (Spark = core habit).
-  NOTE: spark/spark_screen.dart is dead code (old scaffold, unused) and
-  contains a stale duplicate streak path — safe to delete.
-- ~~Study Stats hardcoded~~ — wired (journal + mastered verses real; questionsAnswered/wordsExplored/versesRead = 0 until tracking added)
-- ~~Books Read hardcoded~~ — wired from highlights collection
+- Streak shows 0 — needs consecutive daily sessions to verify
+- Study Stats hardcoded — pre-launch fix needed
+- Books Read hardcoded — pre-launch fix needed
 - Splash brief flash — main screen shows fraction of second before splash
 - Old highlight keys (just numbers) may still exist in Firestore — delete manually
 
@@ -265,10 +257,9 @@ const raw = (request as any).data ?? (request as any).body?.data ?? request ?? {
 - [ ] Confirm scripts/gen_quiz.js in .gitignore
 
 ### Data
-- [x] Wire Study Stats to real Firestore data
-- [x] Wire Books Read to highlights (books with ≥1 highlighted verse)
-- [x] Fix streak recording (was never called from live Spark session) + DST date-math bug
-- [ ] Verify streak logic over multiple days (TestFlight, across a real day boundary)
+- [ ] Wire Study Stats to real Firestore data
+- [ ] Wire Books Read to reading history
+- [ ] Verify streak logic over multiple days
 
 ### Content
 - [ ] Larger quiz question bank (20+ per topic)
