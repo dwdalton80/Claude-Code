@@ -626,16 +626,16 @@ class QuizHomeScreen extends ConsumerWidget {
   const QuizHomeScreen({super.key, required this.uid});
 
   static const _topics = [
-    ('Anxiety & Fear', '😰'),
-    ('Identity', '🪞'),
-    ('Purpose & Calling', '🧭'),
-    ('Forgiveness', '🤝'),
-    ('Prayer', '🙏'),
-    ('Relationships', '💬'),
-    ('Doubt & Faith', '⚓'),
-    ('The Holy Spirit', '🕊️'),
-    ('Suffering', '🌧️'),
-    ('Spiritual Growth', '🌱'),
+    ('Anxiety & Fear', 'assets/images/topics/topic_anxiety_fear.png'),
+    ('Identity', 'assets/images/topics/topic_identity.png'),
+    ('Purpose & Calling', 'assets/images/topics/topic_purpose_calling.png'),
+    ('Forgiveness', 'assets/images/topics/topic_forgiveness.png'),
+    ('Prayer', 'assets/images/topics/topic_prayer.png'),
+    ('Relationships', 'assets/images/topics/topic_relationships.png'),
+    ('Doubt & Faith', 'assets/images/topics/topic_doubt_faith.png'),
+    ('The Holy Spirit', 'assets/images/topics/topic_holy_spirit.png'),
+    ('Suffering', 'assets/images/topics/topic_suffering.png'),
+    ('Spiritual Growth', 'assets/images/topics/topic_spiritual_growth.png'),
   ];
 
   static const _mastery = {
@@ -709,7 +709,7 @@ class QuizHomeScreen extends ConsumerWidget {
             ),
             itemCount: _topics.length,
             itemBuilder: (_, i) {
-              final (tag, emoji) = _topics[i];
+              final (tag, imagePath) = _topics[i];
               final mastery = _mastery[tag] ?? 'Exploring';
               final masteryColor = mastery == 'Strong'
                   ? AppColors.emerald
@@ -732,7 +732,10 @@ class QuizHomeScreen extends ConsumerWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(emoji, style: const TextStyle(fontSize: 22)),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.asset(imagePath, width: 48, height: 48, fit: BoxFit.cover),
+                      ),
                       const Spacer(),
                       Text(tag, style: AppTypography.labelSmall, maxLines: 2),
                       const SizedBox(height: 2),

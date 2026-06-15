@@ -543,15 +543,15 @@ class _BadgesGridState extends State<_BadgesGrid> {
   Set<String> _earned = {};
 
   static const _allBadges = [
-    ('spark', '⚡', 'Spark', '100 XP'),
-    ('on_fire', '🔥', 'On Fire', '500 XP'),
-    ('burning_bright', '✨', 'Burning Bright', '1,500 XP'),
-    ('unquenchable', '💪', 'Unquenchable', '3,500 XP'),
-    ('flame_keeper', '🛡️', 'Flame Keeper', '7,000 XP'),
-    ('eternal_flame', '👑', 'Eternal Flame', '12,000 XP'),
-    ('first_verse', '📖', 'First Verse', 'Memorized 1 verse'),
-    ('ten_verses', '🧠', 'Ten Verses', 'Memorized 10 verses'),
-    ('comeback', '🌅', 'Comeback', 'Returned after 7+ days'),
+    ('spark', 'assets/images/badges/badge_spark.png', 'Spark', '100 XP'),
+    ('on_fire', 'assets/images/badges/badge_on_fire.png', 'On Fire', '500 XP'),
+    ('burning_bright', 'assets/images/badges/badge_burning_bright.png', 'Burning Bright', '1,500 XP'),
+    ('unquenchable', 'assets/images/badges/badge_unquenchable.png', 'Unquenchable', '3,500 XP'),
+    ('flame_keeper', 'assets/images/badges/badge_flame_keeper.png', 'Flame Keeper', '7,000 XP'),
+    ('eternal_flame', 'assets/images/badges/badge_eternal_flame.png', 'Eternal Flame', '12,000 XP'),
+    ('first_verse', 'assets/images/badges/badge_first_verse.png', 'First Verse', 'Memorized 1 verse'),
+    ('ten_verses', 'assets/images/badges/badge_ten_verses.png', 'Ten Verses', 'Memorized 10 verses'),
+    ('comeback', 'assets/images/badges/badge_comeback.png', 'Comeback', 'Returned after 7+ days'),
   ];
 
   @override
@@ -571,9 +571,9 @@ class _BadgesGridState extends State<_BadgesGrid> {
     if (mounted) setState(() => _earned = snap.docs.map((d) => d.id).toSet());
   }
 
-  void _shareBadge(String emoji, String name, String requirement) {
+  void _shareBadge(String imagePath, String name, String requirement) {
     Share.share(
-      'I just earned the "$name" badge on StudyFire! $emoji\n\n$requirement\n\nJoin me at studyfire.app 🔥',
+      'I just earned the "$name" badge on StudyFire! 🔥\n\n$requirement\n\nJoin me at studyfire.app 🔥',
       subject: 'I earned a StudyFire badge!',
     );
   }
@@ -601,7 +601,7 @@ class _BadgesGridState extends State<_BadgesGrid> {
               final badge = _allBadges[i];
               final isEarned = _earned.contains(badge.$1);
               return _BadgeCell(
-                emoji: badge.$2,
+                imagePath: badge.$2,
                 name: badge.$3,
                 isEarned: isEarned,
                 onTap: isEarned ? () => _shareBadge(badge.$2, badge.$3, badge.$4) : null,
@@ -621,13 +621,13 @@ class _BadgesGridState extends State<_BadgesGrid> {
 }
 
 class _BadgeCell extends StatelessWidget {
-  final String emoji;
+  final String imagePath;
   final String name;
   final bool isEarned;
   final VoidCallback? onTap;
 
   const _BadgeCell({
-    required this.emoji,
+    required this.imagePath,
     required this.name,
     required this.isEarned,
     this.onTap,
@@ -640,29 +640,16 @@ class _BadgeCell extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            width: 52,
-            height: 52,
-            decoration: BoxDecoration(
-              color: isEarned ? AppColors.warmGold.withOpacity(0.15) : AppColors.surface,
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: isEarned ? AppColors.warmGold : AppColors.surfaceVariant,
-              ),
-            ),
-            child: Center(
-              child: ColorFiltered(
-                colorFilter: isEarned
-                    ? const ColorFilter.mode(Colors.transparent, BlendMode.multiply)
-                    : const ColorFilter.matrix([
-                        0.2, 0.2, 0.2, 0, 0,
-                        0.2, 0.2, 0.2, 0, 0,
-                        0.2, 0.2, 0.2, 0, 0,
-                        0, 0, 0, 0.5, 0,
-                      ]),
-                child: Text(emoji, style: const TextStyle(fontSize: 28)),
-              ),
-            ),
+          ColorFiltered(
+            colorFilter: isEarned
+                ? const ColorFilter.mode(Colors.transparent, BlendMode.multiply)
+                : const ColorFilter.matrix([
+                    0.3, 0.3, 0.3, 0, 0,
+                    0.3, 0.3, 0.3, 0, 0,
+                    0.3, 0.3, 0.3, 0, 0,
+                    0, 0, 0, 0.4, 0,
+                  ]),
+            child: Image.asset(imagePath, width: 64, height: 64),
           ),
           const SizedBox(height: 4),
           Text(

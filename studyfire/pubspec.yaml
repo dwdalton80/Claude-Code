@@ -90,6 +90,8 @@ flutter:
 
   assets:
     - assets/images/
+    - assets/images/badges/
+    - assets/images/topics/
     - assets/animations/
 
   fonts:

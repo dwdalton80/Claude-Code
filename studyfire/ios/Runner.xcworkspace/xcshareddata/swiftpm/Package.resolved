@@ -1,5 +1,4 @@
 {
-  "originHash" : "8ca03a31f7ff4b82ad7a0091655071db5d25b9723ebc34779220773efa9f44df",
   "pins" : [
     {
       "identity" : "abseil-cpp-binary",
@@ -78,8 +77,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/google/GoogleUtilities.git",
       "state" : {
-        "revision" : "60da361632d0de02786f709bdc0c4df340f7613e",
-        "version" : "8.1.0"
+        "revision" : "c46e5f8b7c23265f17c24ca7f9fa1b13ded7a822",
+        "version" : "8.1.1"
       }
     },
     {
@@ -164,5 +163,5 @@
       }
     }
   ],
-  "version" : 3
+  "version" : 2
 }
