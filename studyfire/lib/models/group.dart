@@ -38,7 +38,7 @@ class Group {
       topic: data['topic'] ?? '',
       description: data['description'],
       endDate: (data['endDate'] as Timestamp?)?.toDate(),
-      creatorUid: data['creatorUid'] ?? '',
+      creatorUid: data['creatorUid'] ?? data['creatorId'] ?? '',
       createdAt: (data['createdAt'] as Timestamp).toDate(),
       inviteCode: data['inviteCode'] ?? '',
       memberCount: data['memberCount'] ?? 0,

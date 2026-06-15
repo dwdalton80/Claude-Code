@@ -366,6 +366,29 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
             icon: const Icon(Icons.share_outlined),
             onPressed: () => _shareInvite(),
           ),
+          PopupMenuButton<String>(
+            onSelected: (val) {
+              if (val == 'leave') _confirmLeave(context);
+              if (val == 'delete') _confirmDelete(context);
+            },
+            itemBuilder: (_) => [
+              if (widget.group.creatorUid == widget.uid)
+                const PopupMenuItem(value: 'delete', child: Row(
+                  children: [
+                    Icon(Icons.delete_outline, color: Colors.redAccent, size: 18),
+                    SizedBox(width: 8),
+                    Text('Delete Group', style: TextStyle(color: Colors.redAccent)),
+                  ],
+                )),
+              const PopupMenuItem(value: 'leave', child: Row(
+                children: [
+                  Icon(Icons.exit_to_app, color: Colors.redAccent, size: 18),
+                  SizedBox(width: 8),
+                  Text('Leave Group', style: TextStyle(color: Colors.redAccent)),
+                ],
+              )),
+            ],
+          ),
         ],
         bottom: TabBar(
           controller: _tabs,
@@ -395,6 +418,65 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
         label: const Text('Ask group'),
       ),
     );
+  }
+
+  Future<void> _confirmDelete(BuildContext context) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: AppColors.cardDark,
+        title: const Text('Delete Group?'),
+        content: Text('This will permanently delete \${widget.group.name} and all its content. This cannot be undone.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete', style: TextStyle(color: Colors.redAccent)),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    try {
+      await FirebaseFirestore.instance.collection('groups').doc(widget.group.id).delete();
+      if (context.mounted) Navigator.pop(context);
+    } catch (e) {
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not delete group. Please try again.')),
+      );
+    }
+  }
+
+  Future<void> _confirmLeave(BuildContext context) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: AppColors.cardDark,
+        title: const Text('Leave Group?'),
+        content: Text('Are you sure you want to leave \${widget.group.name}?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Leave', style: TextStyle(color: Colors.redAccent)),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    try {
+      final uid = widget.uid;
+      final groupRef = FirebaseFirestore.instance.collection('groups').doc(widget.group.id);
+      await Future.wait([
+        groupRef.collection('members').doc(uid).delete(),
+        groupRef.update({'memberIds': FieldValue.arrayRemove([uid])}),
+      ]);
+      if (context.mounted) Navigator.pop(context);
+    } catch (e) {
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not leave group. Please try again.')),
+      );
+    }
   }
 
   void _shareInvite() {
