@@ -12,6 +12,7 @@ import '../../models/memory_verse.dart';
 import '../memory_verse/memory_verse_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+final journalFilterProvider = StateProvider<String>((ref) => 'all');
 class JournalScreen extends ConsumerStatefulWidget {
   const JournalScreen({super.key});
 
@@ -92,36 +93,29 @@ class _JournalScreenState extends ConsumerState<JournalScreen> with SingleTicker
   }
 }
 
-class _FilterChips extends StatefulWidget {
-  @override
-  State<_FilterChips> createState() => _FilterChipsState();
-}
-
-class _FilterChipsState extends State<_FilterChips> {
-  String _selected = 'all';
-
+class _FilterChips extends ConsumerWidget {
   static const _filters = [
     ('all', 'All'),
     ('sermon', 'Sermon'),
     ('personalStudy', 'Personal Study'),
-    ('readingPlan', 'Reading Plan'),
   ];
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final selected = ref.watch(journalFilterProvider);
     return SizedBox(
       height: 48,
       child: ListView(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         children: _filters.map((f) {
-          final isSelected = _selected == f.$1;
+          final isSelected = selected == f.$1;
           return Padding(
             padding: const EdgeInsets.only(right: 8),
             child: FilterChip(
               label: Text(f.$2),
               selected: isSelected,
-              onSelected: (_) => setState(() => _selected = f.$1),
+              onSelected: (_) => ref.read(journalFilterProvider.notifier).state = f.$1,
               selectedColor: AppColors.warmGold.withOpacity(0.2),
               labelStyle: AppTypography.labelSmall.copyWith(
                 color: isSelected ? AppColors.warmGold : AppColors.textSecondary,
@@ -138,14 +132,14 @@ class _FilterChipsState extends State<_FilterChips> {
   }
 }
 
-class _JournalList extends StatefulWidget {
+class _JournalList extends ConsumerStatefulWidget {
   const _JournalList();
 
   @override
-  State<_JournalList> createState() => _JournalListState();
+  ConsumerState<_JournalList> createState() => _JournalListState();
 }
 
-class _JournalListState extends State<_JournalList> {
+class _JournalListState extends ConsumerState<_JournalList> {
   List<JournalEntry> _entries = [];
   bool _loading = true;
 
@@ -165,7 +159,11 @@ class _JournalListState extends State<_JournalList> {
   @override
   Widget build(BuildContext context) {
     if (_loading) return const Center(child: CircularProgressIndicator());
-    if (_entries.isEmpty) {
+    final filter = ref.watch(journalFilterProvider);
+    final filtered = filter == 'all' 
+        ? _entries 
+        : _entries.where((e) => e.type.name == filter).toList();
+    if (filtered.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -208,9 +206,9 @@ class _JournalListState extends State<_JournalList> {
       onRefresh: _load,
       child: ListView.builder(
         padding: const EdgeInsets.symmetric(horizontal: 16),
-        itemCount: _entries.length,
+        itemCount: filtered.length,
         itemBuilder: (_, i) {
-          final e = _entries[i];
+          final e = filtered[i];
           return Dismissible(
             key: Key(e.id),
             direction: DismissDirection.endToStart,
@@ -227,7 +225,7 @@ class _JournalListState extends State<_JournalList> {
             onDismissed: (_) async {
               final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
               await FirestoreService().deleteJournalEntry(uid, e.id);
-              setState(() => _entries.removeAt(i));
+              setState(() => _entries.remove(filtered[i]));
             },
             child: Card(
               color: AppColors.cardDark,
@@ -589,6 +587,7 @@ class _TypeToggle extends StatelessWidget {
           selected: selected == JournalType.personalStudy,
           onTap: () => onChanged(JournalType.personalStudy),
         ),
+
       ],
     );
   }
