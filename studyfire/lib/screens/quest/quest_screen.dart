@@ -435,23 +435,11 @@ class _RandomSparkFAB extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: Container(
-        width: 56,
-        height: 56,
-        decoration: BoxDecoration(
-          gradient: AppColors.flameCTAGradient,
-          shape: BoxShape.circle,
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.flameOrange.withOpacity(0.4),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: const Center(
-          child: Text('🔥', style: TextStyle(fontSize: 26)),
-        ),
+      child: Image.asset(
+        'assets/images/random_spark.png',
+        width: 72,
+        height: 72,
+        fit: BoxFit.contain,
       ),
     );
   }
