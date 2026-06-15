@@ -3,6 +3,7 @@ class XpRewards {
 
   static const int openAppDaily = 5;
   static const int completeSparkSession = 15;
+  static const int memoryVerseMastered = 20;
   static const int completeShortSession = 25;
   static const int completeDeepSession = 40;
   static const int answerAiQuestion = 10;

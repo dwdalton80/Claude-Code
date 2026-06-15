@@ -1,4 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../../core/services/xp_service.dart';
+import '../../core/services/group_activity_service.dart';
+import '../../models/group.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/colors.dart';
@@ -53,10 +57,15 @@ class _MemoryVerseScreenState extends ConsumerState<MemoryVerseScreen> {
       _onVersemastered();
       return;
     }
+    final nextStage = MemoryVerseStage.values[_currentStage.index + 1];
     setState(() {
-      _currentStage = MemoryVerseStage.values[_currentStage.index + 1];
+      _currentStage = nextStage;
       _stagePassed = false;
     });
+    // Save progress (only if not mastered yet)
+    if (nextStage != MemoryVerseStage.stage5) {
+      FirestoreService().saveMemoryVerse(widget.uid, widget.verse.copyWith(currentStage: nextStage));
+    }
   }
 
   Future<void> _onVersemastered() async {
@@ -68,7 +77,26 @@ class _MemoryVerseScreenState extends ConsumerState<MemoryVerseScreen> {
       lastReviewed: now,
       nextReviewDate: _sm2NextDate(widget.verse.interval),
     );
-    await db.saveMemoryVerse(widget.uid, reviewed);
+    try {
+      await db.saveMemoryVerse(widget.uid, reviewed);
+      debugPrint('Saved mastered verse: \${widget.uid} \${reviewed.id} mastered=\${reviewed.mastered}');
+    } catch (e) {
+      debugPrint('Error saving mastered verse: \$e');
+    }
+
+    // Award XP
+    final xpService = XpService();
+    xpService.accumulateXp(widget.uid, XpRewards.memoryVerseMastered);
+    await xpService.flushSession(widget.uid);
+
+    // Post to group feed (onMemoryVerseMastered Cloud Function also fires)
+    final user = FirebaseAuth.instance.currentUser;
+    final name = user?.displayName ?? user?.email?.split('@')[0] ?? 'Member';
+    GroupActivityService().postActivityToUserGroups(
+      widget.uid, name, FeedItemType.memoryVerseMastered,
+      {'text': name + ' mastered ' + widget.verse.reference + ' 📖'},
+    ).catchError((_) {});
+
     if (mounted) _showMasteredSheet();
   }
 

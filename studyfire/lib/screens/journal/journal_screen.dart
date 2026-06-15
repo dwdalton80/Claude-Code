@@ -770,7 +770,7 @@ class _MemoryVerseListState extends State<_MemoryVerseList> {
                       width: 24, height: 6,
                       margin: const EdgeInsets.only(right: 4),
                       decoration: BoxDecoration(
-                        color: s < verse.currentStage.index
+                        color: s < verse.currentStage.index + 1
                             ? AppColors.warmGold
                             : AppColors.surface,
                         borderRadius: BorderRadius.circular(3),
