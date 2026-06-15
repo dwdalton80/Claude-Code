@@ -705,7 +705,7 @@ class QuizHomeScreen extends ConsumerWidget {
               crossAxisCount: 2,
               crossAxisSpacing: 10,
               mainAxisSpacing: 10,
-              childAspectRatio: 1.6,
+              childAspectRatio: 1.0,
             ),
             itemCount: _topics.length,
             itemBuilder: (_, i) {
@@ -730,16 +730,17 @@ class QuizHomeScreen extends ConsumerWidget {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.asset(imagePath, width: 48, height: 48, fit: BoxFit.cover),
+                        borderRadius: BorderRadius.circular(40),
+                        child: Image.asset(imagePath, width: 64, height: 64, fit: BoxFit.cover),
                       ),
-                      const Spacer(),
-                      Text(tag, style: AppTypography.labelSmall, maxLines: 2),
+                      const SizedBox(height: 8),
+                      Text(tag, style: AppTypography.labelSmall, maxLines: 2, textAlign: TextAlign.center),
                       const SizedBox(height: 2),
-                      Text(mastery, style: AppTypography.bodySmall.copyWith(color: masteryColor, fontSize: 11)),
+                      Text(mastery, style: AppTypography.bodySmall.copyWith(color: masteryColor, fontSize: 11), textAlign: TextAlign.center),
                     ],
                   ),
                 ),
