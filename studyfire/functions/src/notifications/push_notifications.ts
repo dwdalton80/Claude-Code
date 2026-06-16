@@ -95,11 +95,13 @@ export async function sendStreakReminders(): Promise<void> {
     const lastVariantIdx = (profile.lastStreakVariantIdx as number) ?? -1;
     let variantIdx = (lastVariantIdx + 1) % STREAK_VARIANTS.length;
 
-    const body = STREAK_VARIANTS[variantIdx];
+    const streak = (profile.streak as number) ?? 0;
+    const streakText = streak > 1 ? `Don't break your ${streak}-day streak! ` : "";
+    const body = streakText + STREAK_VARIANTS[variantIdx];
 
     await sendPushNotification({
       uid,
-      title: "StudyFire 🔥",
+      title: streak > 1 ? `🔥 ${streak}-Day Streak at Risk!` : "StudyFire 🔥",
       body,
       data: { type: "streak_reminder", action: "open_quest" },
     });
