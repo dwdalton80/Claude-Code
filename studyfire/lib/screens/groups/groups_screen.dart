@@ -423,14 +423,14 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
   Future<void> _confirmDelete(BuildContext context) async {
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         backgroundColor: AppColors.cardDark,
         title: const Text('Delete Group?'),
-        content: Text('This will permanently delete \${widget.group.name} and all its content. This cannot be undone.'),
+        content: Text('This will permanently delete ' + widget.group.name + ' and all its content. This cannot be undone.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')),
           TextButton(
-            onPressed: () => Navigator.pop(context, true),
+            onPressed: () => Navigator.pop(dialogContext, true),
             child: const Text('Delete', style: TextStyle(color: Colors.redAccent)),
           ),
         ],
@@ -441,8 +441,9 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
       await FirebaseFirestore.instance.collection('groups').doc(widget.group.id).delete();
       if (context.mounted) Navigator.pop(context);
     } catch (e) {
+      debugPrint('Delete group error: \$e');
       if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not delete group. Please try again.')),
+        SnackBar(content: Text('Error: \$e')),
       );
     }
   }
@@ -450,22 +451,24 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
   Future<void> _confirmLeave(BuildContext context) async {
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         backgroundColor: AppColors.cardDark,
         title: const Text('Leave Group?'),
-        content: Text('Are you sure you want to leave \${widget.group.name}?'),
+        content: Text('Are you sure you want to leave ' + widget.group.name + '?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')),
           TextButton(
-            onPressed: () => Navigator.pop(context, true),
+            onPressed: () => Navigator.pop(dialogContext, true),
             child: const Text('Leave', style: TextStyle(color: Colors.redAccent)),
           ),
         ],
       ),
     );
+    debugPrint('Leave confirm result: \$confirm');
     if (confirm != true) return;
     try {
       final uid = widget.uid;
+      debugPrint('Leaving group: \${widget.group.id} as \$uid');
       final groupRef = FirebaseFirestore.instance.collection('groups').doc(widget.group.id);
       await Future.wait([
         groupRef.collection('members').doc(uid).delete(),
@@ -473,8 +476,9 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
       ]);
       if (context.mounted) Navigator.pop(context);
     } catch (e) {
+      debugPrint('Leave group error: \$e');
       if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not leave group. Please try again.')),
+        SnackBar(content: Text('Error: \$e')),
       );
     }
   }

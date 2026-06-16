@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../models/user_profile.dart';
 import '../../models/journal_entry.dart';
 import '../../models/memory_verse.dart';
@@ -411,14 +412,17 @@ class FirestoreService {
       'lastActivity': now,
       'autoPostSettings': AutoPostSettings.defaults().toMap(),
     });
+    final user = FirebaseAuth.instance.currentUser;
+    final displayName = user?.displayName ?? user?.email?.split('@')[0] ?? 'Member';
+    final streak = 0;
     await groupRef.collection('members').doc(uid).set({
       'joinedAt': now,
       'role': GroupRole.creator.name,
       'weeklyXp': 0,
-      'currentStreak': 0,
+      'currentStreak': streak,
       'badgeCount': 0,
       'versesMemorized': 0,
-      'displayName': '',
+      'displayName': displayName,
     });
     return groupRef.id;
   }

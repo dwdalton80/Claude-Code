@@ -110,9 +110,11 @@ service cloud.firestore {
       allow create: if isSignedIn();
       allow update: if isSignedIn() && (
         get(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid)).data.role == 'creator' ||
-        // Allow any signed-in user to add themselves to memberIds when joining
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberIds', 'memberCount', 'lastActivity'])
+        // Allow any signed-in user to update memberIds (joining or leaving)
+        request.resource.data.diff(resource.data).affectedKeys().hasAny(['memberIds', 'memberCount', 'lastActivity'])
       );
+      allow delete: if isSignedIn() &&
+        get(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid)).data.role == 'creator';
 
       match /members/{uid} {
         allow read: if isSignedIn();
