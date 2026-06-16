@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'screens/splash_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -38,8 +39,13 @@ final currentProfileProvider = StreamProvider.autoDispose<UserProfile?>((ref) {
 final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authStreamProvider);
 
+  // Create a refresh notifier from the auth stream
+  final authNotifier = _AuthNotifier(FirebaseAuth.instance.authStateChanges());
+  ref.onDispose(authNotifier.dispose);
+
   return GoRouter(
     initialLocation: '/quest',
+    refreshListenable: authNotifier,
     redirect: (context, state) {
       final isAuthenticated = authState.valueOrNull != null;
       final isLoading = authState.isLoading;
@@ -268,5 +274,17 @@ class _ProfileLoadingWrapper extends ConsumerWidget {
         return SettingsScreen(profile: profile);
       },
     );
+  }
+}
+
+
+class _AuthNotifier extends ChangeNotifier {
+  late final StreamSubscription<dynamic> _sub;
+  _AuthNotifier(Stream<dynamic> stream) {
+    _sub = stream.listen((_) => notifyListeners());
+  }
+  void dispose() {
+    _sub.cancel();
+    super.dispose();
   }
 }

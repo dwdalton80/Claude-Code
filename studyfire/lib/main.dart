@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -46,15 +48,26 @@ void main() async {
   // Register FCM token with backend on sign-in
   FirebaseAuth.instance.authStateChanges().listen((user) async {
     if (user == null) return;
+    await Future.delayed(const Duration(seconds: 1));
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) return;
     try {
       final token = await FirebaseMessaging.instance.getToken();
       if (token != null) {
-        await FirebaseFunctions.instance
-            .httpsCallable('registerFcmToken')
-            .call({'token': token});
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(currentUser.uid)
+            .collection('fcmTokens')
+            .doc(token)
+            .set({
+          'token': token,
+          'registeredAt': FieldValue.serverTimestamp(),
+          'platform': 'ios',
+        });
+        debugPrint('FCM token saved directly to Firestore');
       }
-    } catch (_) {
-      // Non-fatal — notifications degrade gracefully
+    } catch (e) {
+      debugPrint('FCM registration error: ' + e.toString());
     }
   });
 
@@ -63,9 +76,16 @@ void main() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
     try {
-      await FirebaseFunctions.instance
-          .httpsCallable('registerFcmToken')
-          .call({'token': token});
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('fcmTokens')
+          .doc(token)
+          .set({
+        'token': token,
+        'registeredAt': FieldValue.serverTimestamp(),
+        'platform': 'ios',
+      });
     } catch (_) {}
   });
 

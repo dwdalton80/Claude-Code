@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:pdf/pdf.dart';
@@ -310,7 +311,6 @@ void _exportPdf(BuildContext context) async {
               leading: const Icon(Icons.logout, color: Colors.redAccent),
               title: const Text('Sign Out', style: TextStyle(color: Colors.redAccent)),
               onTap: () async {
-                Navigator.pop(context);
                 await AuthService().signOut();
               },
             ),
