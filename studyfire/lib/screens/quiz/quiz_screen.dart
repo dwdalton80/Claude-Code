@@ -683,13 +683,18 @@ class QuizHomeScreen extends ConsumerWidget {
                   ],
                 ),
                 const SizedBox(height: 16),
-                FlameCTAButton(
-                  label: 'Start Quiz',
-                  onPressed: () => Navigator.push(
+                GestureDetector(
+                  onTap: () => Navigator.push(
                     context,
                     MaterialPageRoute(
                       builder: (_) => QuizScreen(uid: uid, topicTag: 'Identity'),
                     ),
+                  ),
+                  child: Image.asset(
+                    'assets/images/start_quiz_button.png',
+                    width: double.infinity,
+                    height: 80,
+                    fit: BoxFit.contain,
                   ),
                 ),
               ],

@@ -289,7 +289,7 @@ class _QuestCard extends StatelessWidget {
               child: Image.asset(
                 'assets/images/start_quest_button.png',
                 width: double.infinity,
-                height: 110,
+                height: 180,
                 fit: BoxFit.contain,
               ),
             ),
