@@ -143,6 +143,16 @@ class _SparkSessionScreenState extends ConsumerState<SparkSessionScreen>
       // recorded today. This is what makes the streak actually increment.
       try {
         _streakResult = await _streakService.recordActivity(uid);
+        // Award streak milestone bonus XP
+        if (_streakResult?.milestoneReached != null) {
+          _xpService.accumulateXp(uid, XpRewards.sevenDayStreakBonus);
+          await _xpService.flushSession(uid);
+        }
+        // Award streak milestone bonus XP
+        if (_streakResult?.milestoneReached != null) {
+          _xpService.accumulateXp(uid, XpRewards.sevenDayStreakBonus);
+          await _xpService.flushSession(uid);
+        }
       } catch (_) {
         // Non-fatal — XP still saved even if streak write fails
       }

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../core/services/xp_service.dart';
+import '../../core/constants/xp_rewards.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -874,6 +876,8 @@ class _PostQuestionSheetState extends State<_PostQuestionSheet> {
               try {
                 final user = FirebaseAuth.instance.currentUser;
                 final authorName = user?.displayName ?? user?.email?.split('@')[0] ?? 'Member';
+                final qUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+                if (qUid.isNotEmpty) { final xs = XpService(); xs.accumulateXp(qUid, XpRewards.postQuestionToGroup); xs.flushSession(qUid).catchError((_){}); }
                 await FirebaseFirestore.instance
                     .collection('groupQuestions')
                     .doc(widget.groupId)
