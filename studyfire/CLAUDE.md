@@ -276,9 +276,9 @@ const raw = (request as any).data ?? (request as any).body?.data ?? request ?? {
 - [ ] Restore last Reader position — _savePosition() exists; add SharedPreferences restore in initState when no explicit book/chapter passed
 - [ ] Daily XP goal should scale with level — _dailyXpGoal is hardcoded at 100 in quest_screen.dart; tie to LevelThresholds
 - [ ] Verse sharing from Spark completion screen — share_plus already used for badges; add share button for verse text + reference
-- [ ] Memory verse discovery UX — add "Add a verse" search/reference picker from profile or journal screen
-- [ ] Reading plans — "30 days through Romans" style structured path; infrastructure (sparkcache, streak, journal) is in place
-- [ ] Group discussion threads — one-level threaded replies on group feed items
+- [x] Memory verse discovery UX — Verse Vault section on profile screen with Add-a-Verse bottom sheet
+- [ ] Reading plans — "30 days through Romans" style structured path; static plan definitions hardcoded in app, progress in userPlans subcollection; surfaced as persistent card on Quest screen alongside (not replacing) daily Quest
+- [x] Group discussion threads — one-level threaded replies on feed items via _FeedThreadSheet (DraggableScrollableSheet, replies subcollection, commentCount incremented via batch)
 
 ### App Store
 - [ ] Screenshots all device sizes

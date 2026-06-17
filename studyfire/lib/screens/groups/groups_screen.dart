@@ -947,7 +947,7 @@ class _FeedTab extends ConsumerWidget {
                 ),
               );
             }
-            return _FeedItemCard(item: items[feedIdx], currentUid: uid);
+            return _FeedItemCard(item: items[feedIdx], currentUid: uid, groupId: group.id);
           },
         );
       },
@@ -1094,8 +1094,13 @@ String _timeAgo(DateTime dt) {
 class _FeedItemCard extends StatelessWidget {
   final FeedItem item;
   final String currentUid;
+  final String groupId;
 
-  const _FeedItemCard({required this.item, required this.currentUid});
+  const _FeedItemCard({
+    required this.item,
+    required this.currentUid,
+    required this.groupId,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1124,44 +1129,78 @@ class _FeedItemCard extends StatelessWidget {
         (item.content['message'] as String?) ??
         '${item.authorName} shared something.';
 
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.cardDark,
-        borderRadius: BorderRadius.circular(12),
+    return GestureDetector(
+      onTap: () => showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: AppColors.deepSlate,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        builder: (_) => _FeedThreadSheet(
+          item: item,
+          groupId: groupId,
+          uid: currentUid,
+        ),
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: iconColor.withOpacity(0.15),
-              borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.cardDark,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: iconColor.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(icon, color: iconColor, size: 18),
             ),
-            child: Icon(icon, color: iconColor, size: 18),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(child: Text(item.authorName, style: AppTypography.labelSmall)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(child: Text(item.authorName, style: AppTypography.labelSmall)),
+                      Text(
+                        _timeAgo(item.timestamp),
+                        style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(displayText, style: AppTypography.bodyMedium),
+                  if (item.commentCount > 0) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const Icon(Icons.chat_bubble_outline, size: 13, color: AppColors.textSecondary),
+                        const SizedBox(width: 4),
+                        Text(
+                          '${item.commentCount} ${item.commentCount == 1 ? 'reply' : 'replies'}',
+                          style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary),
+                        ),
+                      ],
+                    ),
+                  ] else ...[
+                    const SizedBox(height: 8),
                     Text(
-                      _timeAgo(item.timestamp),
+                      'Reply…',
                       style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary),
                     ),
                   ],
-                ),
-                const SizedBox(height: 4),
-                Text(displayText, style: AppTypography.bodyMedium),
-              ],
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -1842,6 +1881,270 @@ class _QuestionDetailScreenState extends State<_QuestionDetailScreen> {
                     : IconButton(
                         icon: const Icon(Icons.send_rounded, color: AppColors.warmGold),
                         onPressed: _postComment,
+                      ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Feed Thread Sheet ──────────────────────────────────────────────────────────
+
+class _FeedThreadSheet extends StatefulWidget {
+  final FeedItem item;
+  final String groupId;
+  final String uid;
+
+  const _FeedThreadSheet({
+    required this.item,
+    required this.groupId,
+    required this.uid,
+  });
+
+  @override
+  State<_FeedThreadSheet> createState() => _FeedThreadSheetState();
+}
+
+class _FeedThreadSheetState extends State<_FeedThreadSheet> {
+  final _ctrl = TextEditingController();
+  bool _submitting = false;
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _postReply() async {
+    final text = _ctrl.text.trim();
+    if (text.isEmpty) return;
+    setState(() => _submitting = true);
+    try {
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.uid)
+          .get();
+      final profileData = userDoc.data()?['profile'] as Map<String, dynamic>? ?? {};
+      final authorName = (profileData['name'] as String?)?.isNotEmpty == true
+          ? profileData['name'] as String
+          : FirebaseAuth.instance.currentUser?.email?.split('@')[0] ?? 'Member';
+
+      final batch = FirebaseFirestore.instance.batch();
+
+      final replyRef = FirebaseFirestore.instance
+          .collection('groups')
+          .doc(widget.groupId)
+          .collection('feed')
+          .doc(widget.item.id)
+          .collection('replies')
+          .doc();
+
+      batch.set(replyRef, {
+        'authorUid': widget.uid,
+        'authorName': authorName,
+        'text': text,
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+
+      batch.update(
+        FirebaseFirestore.instance
+            .collection('groups')
+            .doc(widget.groupId)
+            .collection('feed')
+            .doc(widget.item.id),
+        {'commentCount': FieldValue.increment(1)},
+      );
+
+      await batch.commit();
+      _ctrl.clear();
+      if (mounted) setState(() => _submitting = false);
+    } catch (e) {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final displayText = (widget.item.content['text'] as String?) ??
+        (widget.item.content['message'] as String?) ??
+        '${widget.item.authorName} shared something.';
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.75,
+      minChildSize: 0.4,
+      maxChildSize: 0.95,
+      expand: false,
+      builder: (_, scrollController) => Column(
+        children: [
+          // Drag handle
+          Container(
+            margin: const EdgeInsets.symmetric(vertical: 10),
+            width: 36,
+            height: 4,
+            decoration: BoxDecoration(
+              color: AppColors.textSecondary.withOpacity(0.4),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+
+          // Original post
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            decoration: BoxDecoration(
+              border: Border(bottom: BorderSide(color: AppColors.surface)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 16,
+                      backgroundColor: AppColors.warmGold.withOpacity(0.2),
+                      child: Text(
+                        widget.item.authorName.isNotEmpty
+                            ? widget.item.authorName[0].toUpperCase()
+                            : '?',
+                        style: const TextStyle(color: AppColors.warmGold, fontSize: 13),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(widget.item.authorName, style: AppTypography.labelSmall),
+                    ),
+                    Text(
+                      _timeAgo(widget.item.timestamp),
+                      style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Text(displayText, style: AppTypography.bodyMedium),
+              ],
+            ),
+          ),
+
+          // Replies list
+          Expanded(
+            child: StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('groups')
+                  .doc(widget.groupId)
+                  .collection('feed')
+                  .doc(widget.item.id)
+                  .collection('replies')
+                  .orderBy('timestamp', descending: false)
+                  .snapshots(),
+              builder: (context, snap) {
+                if (snap.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+                }
+                final docs = snap.data?.docs ?? [];
+                if (docs.isEmpty) {
+                  return Center(
+                    child: Text(
+                      'No replies yet — be the first!',
+                      style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary),
+                    ),
+                  );
+                }
+                return ListView.builder(
+                  controller: scrollController,
+                  padding: const EdgeInsets.all(16),
+                  itemCount: docs.length,
+                  itemBuilder: (_, i) {
+                    final data = docs[i].data() as Map<String, dynamic>;
+                    final name = data['authorName'] as String? ?? 'Member';
+                    final text = data['text'] as String? ?? '';
+                    final ts = (data['timestamp'] as Timestamp?)?.toDate();
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          CircleAvatar(
+                            radius: 15,
+                            backgroundColor: AppColors.indigoAccent.withOpacity(0.2),
+                            child: Text(
+                              name.isNotEmpty ? name[0].toUpperCase() : '?',
+                              style: const TextStyle(color: AppColors.indigoAccent, fontSize: 12),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Flexible(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: AppColors.cardDark,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Expanded(child: Text(name, style: AppTypography.labelSmall)),
+                                      if (ts != null)
+                                        Text(
+                                          _timeAgo(ts),
+                                          style: AppTypography.bodySmall.copyWith(
+                                            color: AppColors.textSecondary,
+                                            fontSize: 10,
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(text, style: AppTypography.bodyMedium),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+
+          // Reply input
+          Container(
+            padding: EdgeInsets.fromLTRB(
+              12, 8, 12, MediaQuery.of(context).viewInsets.bottom + MediaQuery.of(context).padding.bottom + 8,
+            ),
+            decoration: BoxDecoration(
+              color: AppColors.cardDark,
+              border: Border(top: BorderSide(color: AppColors.surface)),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _ctrl,
+                    autofocus: false,
+                    style: AppTypography.bodyMedium,
+                    decoration: const InputDecoration(
+                      hintText: 'Add a reply…',
+                      border: InputBorder.none,
+                      contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                    ),
+                    onSubmitted: (_) => _postReply(),
+                  ),
+                ),
+                _submitting
+                    ? const SizedBox(
+                        width: 20, height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : IconButton(
+                        icon: const Icon(Icons.send_rounded, color: AppColors.warmGold),
+                        onPressed: _postReply,
                       ),
               ],
             ),
