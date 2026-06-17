@@ -1,8 +1,10 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../core/constants/session_length.dart';
+
+export '../core/constants/session_length.dart';
 
 enum StudyLevel { beginner, growing, scholar }
 enum BibleVersion { kjv, csb, niv }
-enum SessionLength { spark, short, deep }
 enum StudyGoal { readMore, understandDeeper, memorize, applySermons }
 enum UserTheme { dark, light, sepia, auto }
 

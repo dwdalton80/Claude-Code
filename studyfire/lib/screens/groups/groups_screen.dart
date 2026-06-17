@@ -4,6 +4,7 @@ import '../../core/services/xp_service.dart';
 import '../../core/constants/xp_rewards.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/services.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/colors.dart';
 import '../../core/constants/typography.dart';
@@ -30,6 +31,15 @@ final groupMembersProvider =
 final groupQuestionsProvider =
     StreamProvider.family<List<GroupQuestion>, String>((ref, groupId) {
   return FirestoreService().watchGroupQuestions(groupId);
+});
+
+final groupDocProvider =
+    StreamProvider.family<Group?, String>((ref, groupId) {
+  return FirebaseFirestore.instance
+      .collection('groups')
+      .doc(groupId)
+      .snapshots()
+      .map((s) => s.exists ? Group.fromFirestore(s) : null);
 });
 
 // ── Groups Screen ─────────────────────────────────────────────────────────────
@@ -325,7 +335,7 @@ class _CreateOrJoinSheetState extends State<_CreateOrJoinSheet> {
 
 // ── Group Detail Screen ───────────────────────────────────────────────────────
 
-class GroupDetailScreen extends StatefulWidget {
+class GroupDetailScreen extends ConsumerStatefulWidget {
   final Group group;
   final String uid;
   final bool isPremium;
@@ -338,17 +348,17 @@ class GroupDetailScreen extends StatefulWidget {
   });
 
   @override
-  State<GroupDetailScreen> createState() => _GroupDetailScreenState();
+  ConsumerState<GroupDetailScreen> createState() => _GroupDetailScreenState();
 }
 
-class _GroupDetailScreenState extends State<GroupDetailScreen>
+class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabs;
 
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 3, vsync: this);
+    _tabs = TabController(length: 4, vsync: this);
   }
 
   @override
@@ -359,22 +369,60 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
 
   @override
   Widget build(BuildContext context) {
+    final groupAsync = ref.watch(groupDocProvider(widget.group.id));
+    final group = groupAsync.valueOrNull ?? widget.group;
+    final isCreator = group.creatorUid == widget.uid;
+
     return Scaffold(
       backgroundColor: AppColors.deepSlate,
       appBar: AppBar(
-        title: Text(widget.group.name),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(group.name),
+            if (group.topic.isNotEmpty)
+              Text(
+                group.topic,
+                style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary),
+              ),
+          ],
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.share_outlined),
-            onPressed: () => _shareInvite(),
+            onPressed: () => _shareInvite(group),
           ),
           PopupMenuButton<String>(
             onSelected: (val) {
-              if (val == 'leave') _confirmLeave(context);
-              if (val == 'delete') _confirmDelete(context);
+              if (val == 'edit') _showEditGroupSheet(context, group);
+              if (val == 'plan') _showReadingPlanSheet(context, group);
+              if (val == 'announce') _showPinAnnouncementSheet(context, group);
+              if (val == 'leave') _confirmLeave(context, group);
+              if (val == 'delete') _confirmDelete(context, group);
             },
             itemBuilder: (_) => [
-              if (widget.group.creatorUid == widget.uid)
+              if (isCreator) ...[
+                const PopupMenuItem(value: 'edit', child: Row(
+                  children: [
+                    Icon(Icons.edit_outlined, size: 18),
+                    SizedBox(width: 8),
+                    Text('Edit Group'),
+                  ],
+                )),
+                const PopupMenuItem(value: 'plan', child: Row(
+                  children: [
+                    Icon(Icons.calendar_month_outlined, size: 18),
+                    SizedBox(width: 8),
+                    Text('Reading Plan'),
+                  ],
+                )),
+                const PopupMenuItem(value: 'announce', child: Row(
+                  children: [
+                    Icon(Icons.push_pin_outlined, size: 18),
+                    SizedBox(width: 8),
+                    Text('Pin Announcement'),
+                  ],
+                )),
                 const PopupMenuItem(value: 'delete', child: Row(
                   children: [
                     Icon(Icons.delete_outline, color: Colors.redAccent, size: 18),
@@ -382,13 +430,15 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                     Text('Delete Group', style: TextStyle(color: Colors.redAccent)),
                   ],
                 )),
-              const PopupMenuItem(value: 'leave', child: Row(
-                children: [
-                  Icon(Icons.exit_to_app, color: Colors.redAccent, size: 18),
-                  SizedBox(width: 8),
-                  Text('Leave Group', style: TextStyle(color: Colors.redAccent)),
-                ],
-              )),
+              ],
+              if (!isCreator)
+                const PopupMenuItem(value: 'leave', child: Row(
+                  children: [
+                    Icon(Icons.exit_to_app, color: Colors.redAccent, size: 18),
+                    SizedBox(width: 8),
+                    Text('Leave Group', style: TextStyle(color: Colors.redAccent)),
+                  ],
+                )),
             ],
           ),
         ],
@@ -401,15 +451,20 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
             Tab(text: 'Feed'),
             Tab(text: 'Questions'),
             Tab(text: 'Leaderboard'),
+            Tab(text: 'Members'),
           ],
         ),
       ),
       body: TabBarView(
         controller: _tabs,
         children: [
-          _FeedTab(groupId: widget.group.id, uid: widget.uid),
-          _QuestionsTab(group: widget.group, uid: widget.uid),
-          _LeaderboardTab(group: widget.group),
+          _FeedTab(group: group, uid: widget.uid,
+              onPinAnnouncement: isCreator ? () => _showPinAnnouncementSheet(context, group) : null,
+              onUnpinAnnouncement: isCreator ? () => _removePinnedAnnouncement(group) : null),
+          _QuestionsTab(group: group, uid: widget.uid),
+          _LeaderboardTab(group: group),
+          _MembersTab(group: group, currentUid: widget.uid,
+              onRemoveMember: isCreator ? (memberUid) => _confirmRemoveMember(context, group, memberUid) : null),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
@@ -422,13 +477,311 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
     );
   }
 
-  Future<void> _confirmDelete(BuildContext context) async {
+  // ── Edit Group ──────────────────────────────────────────────────────────────
+
+  void _showEditGroupSheet(BuildContext context, Group group) {
+    final nameCtrl = TextEditingController(text: group.name);
+    final topicCtrl = TextEditingController(text: group.topic);
+    final descCtrl = TextEditingController(text: group.description ?? '');
+    bool saving = false;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.cardDark,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) => Padding(
+          padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(ctx).viewInsets.bottom + 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Edit Group', style: AppTypography.displaySmall),
+              const SizedBox(height: 20),
+              const Text('Group name', style: AppTypography.labelSmall),
+              const SizedBox(height: 6),
+              TextField(
+                controller: nameCtrl,
+                style: AppTypography.bodyLarge,
+                decoration: const InputDecoration(hintText: 'e.g. Sunday Morning Bible Study'),
+              ),
+              const SizedBox(height: 16),
+              const Text('Topic / focus', style: AppTypography.labelSmall),
+              const SizedBox(height: 6),
+              TextField(
+                controller: topicCtrl,
+                style: AppTypography.bodyLarge,
+                decoration: const InputDecoration(hintText: 'e.g. Book of John, Prayer & Fasting'),
+              ),
+              const SizedBox(height: 16),
+              const Text('Description (optional)', style: AppTypography.labelSmall),
+              const SizedBox(height: 6),
+              TextField(
+                controller: descCtrl,
+                maxLines: 3,
+                style: AppTypography.bodyLarge,
+                decoration: const InputDecoration(hintText: 'What is this group studying?'),
+              ),
+              const SizedBox(height: 24),
+              FlameCTAButton(
+                label: 'Save',
+                isLoading: saving,
+                onPressed: () async {
+                  final name = nameCtrl.text.trim();
+                  if (name.isEmpty) return;
+                  setModalState(() => saving = true);
+                  try {
+                    await FirestoreService().updateGroupInfo(
+                      group.id,
+                      name: name,
+                      topic: topicCtrl.text.trim(),
+                      description: descCtrl.text.trim(),
+                    );
+                    if (ctx.mounted) Navigator.pop(ctx);
+                  } catch (_) {
+                    setModalState(() => saving = false);
+                  }
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Reading Plan ─────────────────────────────────────────────────────────────
+
+  void _showReadingPlanSheet(BuildContext context, Group group) {
+    final entries = group.readingPlan
+        .map((e) => _PlanEntry(
+              date: e['date'] as String? ?? '',
+              passage: e['passage'] as String? ?? '',
+            ))
+        .toList();
+    bool saving = false;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.cardDark,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) => Padding(
+          padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(ctx).viewInsets.bottom + 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Expanded(child: Text('Reading Plan', style: AppTypography.displaySmall)),
+                  TextButton.icon(
+                    onPressed: () => setModalState(() => entries.add(_PlanEntry())),
+                    icon: const Icon(Icons.add, size: 16, color: AppColors.warmGold),
+                    label: const Text('Add', style: TextStyle(color: AppColors.warmGold)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Set passages and dates for your group\'s study schedule.',
+                style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 16),
+              if (entries.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  child: Text('No entries yet — tap Add to create your first reading.',
+                      style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary)),
+                )
+              else
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 300),
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: entries.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 10),
+                    itemBuilder: (_, i) {
+                      final e = entries[i];
+                      return Row(
+                        children: [
+                          Expanded(
+                            flex: 2,
+                            child: TextField(
+                              controller: e.dateCtrl,
+                              style: AppTypography.bodyMedium,
+                              decoration: const InputDecoration(
+                                hintText: 'Jun 18',
+                                contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            flex: 3,
+                            child: TextField(
+                              controller: e.passageCtrl,
+                              style: AppTypography.bodyMedium,
+                              decoration: const InputDecoration(
+                                hintText: 'Romans 5:1-21',
+                                contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close, size: 16, color: AppColors.textSecondary),
+                            onPressed: () => setModalState(() => entries.removeAt(i)),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+              const SizedBox(height: 20),
+              FlameCTAButton(
+                label: 'Save Plan',
+                isLoading: saving,
+                onPressed: () async {
+                  setModalState(() => saving = true);
+                  try {
+                    final plan = entries
+                        .where((e) => e.passageCtrl.text.trim().isNotEmpty)
+                        .map((e) => {
+                              'date': e.dateCtrl.text.trim(),
+                              'passage': e.passageCtrl.text.trim(),
+                            })
+                        .toList();
+                    await FirestoreService().updateReadingPlan(group.id, plan);
+                    if (ctx.mounted) Navigator.pop(ctx);
+                  } catch (_) {
+                    setModalState(() => saving = false);
+                  }
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Pin Announcement ─────────────────────────────────────────────────────────
+
+  void _showPinAnnouncementSheet(BuildContext context, Group group) {
+    final existing = group.pinnedAnnouncement?['text'] as String? ?? '';
+    final ctrl = TextEditingController(text: existing);
+    bool saving = false;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.cardDark,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) => Padding(
+          padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(ctx).viewInsets.bottom + 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('📌 Pin Announcement', style: AppTypography.displaySmall),
+              const SizedBox(height: 4),
+              Text(
+                'Pinned to the top of the Feed for all members.',
+                style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: ctrl,
+                maxLines: 4,
+                autofocus: true,
+                style: AppTypography.bodyLarge,
+                decoration: const InputDecoration(
+                  hintText: 'e.g. This week we\'re studying Romans 5–8. See you Sunday!',
+                ),
+              ),
+              const SizedBox(height: 20),
+              FlameCTAButton(
+                label: 'Pin',
+                isLoading: saving,
+                onPressed: () async {
+                  if (ctrl.text.trim().isEmpty) return;
+                  setModalState(() => saving = true);
+                  try {
+                    await FirestoreService().pinAnnouncement(group.id, ctrl.text.trim(), widget.uid);
+                    if (ctx.mounted) Navigator.pop(ctx);
+                  } catch (_) {
+                    setModalState(() => saving = false);
+                  }
+                },
+              ),
+              if (existing.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                TextButton(
+                  onPressed: () async {
+                    await FirestoreService().unpinAnnouncement(group.id);
+                    if (ctx.mounted) Navigator.pop(ctx);
+                  },
+                  child: const Text('Remove pinned announcement',
+                      style: TextStyle(color: Colors.redAccent)),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _removePinnedAnnouncement(Group group) async {
+    await FirestoreService().unpinAnnouncement(group.id);
+  }
+
+  // ── Remove Member ─────────────────────────────────────────────────────────────
+
+  Future<void> _confirmRemoveMember(BuildContext context, Group group, String memberUid) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.cardDark,
+        title: const Text('Remove member?'),
+        content: const Text('This person will be removed from the group and will need a new invite code to rejoin.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Remove', style: TextStyle(color: Colors.redAccent)),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    try {
+      await FirestoreService().removeGroupMember(group.id, memberUid);
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not remove member: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _confirmDelete(BuildContext context, Group group) async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         backgroundColor: AppColors.cardDark,
         title: const Text('Delete Group?'),
-        content: Text('This will permanently delete ' + widget.group.name + ' and all its content. This cannot be undone.'),
+        content: Text('This will permanently delete ${group.name} and all its content. This cannot be undone.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')),
           TextButton(
@@ -440,23 +793,32 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
     );
     if (confirm != true) return;
     try {
-      await FirebaseFirestore.instance.collection('groups').doc(widget.group.id).delete();
+      final groupRef = FirebaseFirestore.instance.collection('groups').doc(group.id);
+
+      // Delete subcollections before the parent doc
+      for (final sub in ['members', 'questions', 'activity', 'feed']) {
+        final snap = await groupRef.collection(sub).get();
+        for (final doc in snap.docs) {
+          await doc.reference.delete();
+        }
+      }
+
+      await groupRef.delete();
       if (context.mounted) Navigator.pop(context);
     } catch (e) {
-      debugPrint('Delete group error: \$e');
       if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: \$e')),
+        SnackBar(content: Text('Error deleting group: $e')),
       );
     }
   }
 
-  Future<void> _confirmLeave(BuildContext context) async {
+  Future<void> _confirmLeave(BuildContext context, Group group) async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         backgroundColor: AppColors.cardDark,
         title: const Text('Leave Group?'),
-        content: Text('Are you sure you want to leave ' + widget.group.name + '?'),
+        content: Text('Are you sure you want to leave ${group.name}?'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')),
           TextButton(
@@ -466,38 +828,24 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
         ],
       ),
     );
-    debugPrint('Leave confirm result: \$confirm');
     if (confirm != true) return;
     try {
-      final uid = widget.uid;
-      debugPrint('Leaving group: \${widget.group.id} as \$uid');
-      final groupRef = FirebaseFirestore.instance.collection('groups').doc(widget.group.id);
+      final groupRef = FirebaseFirestore.instance.collection('groups').doc(group.id);
       await Future.wait([
-        groupRef.collection('members').doc(uid).delete(),
-        groupRef.update({'memberIds': FieldValue.arrayRemove([uid])}),
+        groupRef.collection('members').doc(widget.uid).delete(),
+        groupRef.update({'memberIds': FieldValue.arrayRemove([widget.uid])}),
       ]);
       if (context.mounted) Navigator.pop(context);
     } catch (e) {
-      debugPrint('Leave group error: \$e');
       if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: \$e')),
+        SnackBar(content: Text('Error leaving group: $e')),
       );
     }
   }
 
-  void _shareInvite() {
-    final code = widget.group.inviteCode;
+  void _shareInvite(Group group) {
     HapticFeedback.lightImpact();
-    // Share.share('Join my StudyFire group "$name" with code: $code');
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Invite code: $code  (tap to copy)'),
-        action: SnackBarAction(
-          label: 'Copy',
-          onPressed: () => Clipboard.setData(ClipboardData(text: code)),
-        ),
-      ),
-    );
+    Share.share('Join my StudyFire Bible study group "${group.name}"! Use invite code: ${group.inviteCode}');
   }
 
   void _postQuestion(BuildContext context) {
@@ -519,36 +867,228 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
 // ── Feed Tab ──────────────────────────────────────────────────────────────────
 
 class _FeedTab extends ConsumerWidget {
-  final String groupId;
+  final Group group;
   final String uid;
+  final VoidCallback? onPinAnnouncement;
+  final VoidCallback? onUnpinAnnouncement;
 
-  const _FeedTab({required this.groupId, required this.uid});
+  const _FeedTab({
+    required this.group,
+    required this.uid,
+    this.onPinAnnouncement,
+    this.onUnpinAnnouncement,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final feedAsync = ref.watch(groupFeedProvider(groupId));
+    final feedAsync = ref.watch(groupFeedProvider(group.id));
+    final isCreator = group.creatorUid == uid;
+    final announcement = group.pinnedAnnouncement;
+    final plan = group.readingPlan;
 
     return feedAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (_, __) => const Center(child: Text('Could not load feed')),
       data: (items) {
-        if (items.isEmpty) {
-          return Center(
-            child: Text(
-              'No activity yet — be the first to post!',
-              style: AppTypography.bodyMedium.copyWith(color: AppColors.textSecondary),
-            ),
-          );
-        }
+        final hasHeader = announcement != null || plan.isNotEmpty || isCreator;
         return ListView.separated(
           padding: const EdgeInsets.all(16),
-          itemCount: items.length,
+          itemCount: (hasHeader ? 1 : 0) + (items.isEmpty ? 1 : items.length),
           separatorBuilder: (_, __) => const SizedBox(height: 12),
-          itemBuilder: (_, i) => _FeedItemCard(item: items[i], currentUid: uid),
+          itemBuilder: (_, i) {
+            // Header slot: pinned announcement + reading plan
+            if (hasHeader && i == 0) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (announcement != null)
+                    _PinnedAnnouncementCard(
+                      text: announcement['text'] as String? ?? '',
+                      isCreator: isCreator,
+                      onEdit: onPinAnnouncement,
+                      onRemove: onUnpinAnnouncement,
+                    )
+                  else if (isCreator)
+                    GestureDetector(
+                      onTap: onPinAnnouncement,
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppColors.surface,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: AppColors.surfaceVariant),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.push_pin_outlined, size: 16, color: AppColors.textSecondary),
+                            const SizedBox(width: 8),
+                            Text('Pin an announcement for the group',
+                                style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  if (plan.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    _ReadingPlanCard(plan: plan),
+                  ],
+                  if (hasHeader && items.isNotEmpty) const SizedBox(height: 4),
+                ],
+              );
+            }
+
+            final feedIdx = hasHeader ? i - 1 : i;
+            if (items.isEmpty) {
+              return Center(
+                child: Text(
+                  'No activity yet — be the first to post!',
+                  style: AppTypography.bodyMedium.copyWith(color: AppColors.textSecondary),
+                ),
+              );
+            }
+            return _FeedItemCard(item: items[feedIdx], currentUid: uid);
+          },
         );
       },
     );
   }
+}
+
+// ── Plan Entry Helper ──────────────────────────────────────────────────────────
+
+class _PlanEntry {
+  final TextEditingController dateCtrl;
+  final TextEditingController passageCtrl;
+
+  _PlanEntry({String date = '', String passage = ''})
+      : dateCtrl = TextEditingController(text: date),
+        passageCtrl = TextEditingController(text: passage);
+}
+
+// ── Pinned Announcement Card ──────────────────────────────────────────────────
+
+class _PinnedAnnouncementCard extends StatelessWidget {
+  final String text;
+  final bool isCreator;
+  final VoidCallback? onEdit;
+  final VoidCallback? onRemove;
+
+  const _PinnedAnnouncementCard({
+    required this.text,
+    required this.isCreator,
+    this.onEdit,
+    this.onRemove,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.indigoAccent.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.indigoAccent.withOpacity(0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.push_pin, size: 14, color: AppColors.indigoAccent),
+              const SizedBox(width: 6),
+              Text('Pinned',
+                  style: AppTypography.labelSmall.copyWith(color: AppColors.indigoAccent, fontSize: 11)),
+              const Spacer(),
+              if (isCreator) ...[
+                GestureDetector(
+                  onTap: onEdit,
+                  child: const Icon(Icons.edit_outlined, size: 16, color: AppColors.textSecondary),
+                ),
+                const SizedBox(width: 12),
+                GestureDetector(
+                  onTap: onRemove,
+                  child: const Icon(Icons.close, size: 16, color: AppColors.textSecondary),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(text, style: AppTypography.bodyMedium),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Reading Plan Card ─────────────────────────────────────────────────────────
+
+class _ReadingPlanCard extends StatelessWidget {
+  final List<Map<String, dynamic>> plan;
+
+  const _ReadingPlanCard({required this.plan});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.warmGold.withOpacity(0.06),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.warmGold.withOpacity(0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.calendar_month_outlined, size: 14, color: AppColors.warmGold),
+              const SizedBox(width: 6),
+              Text('Reading Plan',
+                  style: AppTypography.labelSmall.copyWith(color: AppColors.warmGold, fontSize: 11)),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ...plan.take(5).map((entry) {
+            final passage = entry['passage'] as String? ?? '';
+            final date = entry['date'] as String? ?? '';
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 52,
+                    child: Text(date,
+                        style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary)),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(passage, style: AppTypography.bodyMedium),
+                  ),
+                ],
+              ),
+            );
+          }),
+          if (plan.length > 5)
+            Text('+ ${plan.length - 5} more',
+                style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary)),
+        ],
+      ),
+    );
+  }
+}
+
+String _timeAgo(DateTime dt) {
+  final diff = DateTime.now().difference(dt);
+  if (diff.inMinutes < 1) return 'just now';
+  if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+  if (diff.inHours < 24) return '${diff.inHours}h ago';
+  if (diff.inDays == 1) return 'Yesterday';
+  if (diff.inDays < 7) return '${diff.inDays}d ago';
+  final months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return '${months[dt.month - 1]} ${dt.day}';
 }
 
 class _FeedItemCard extends StatelessWidget {
@@ -607,7 +1147,15 @@ class _FeedItemCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(item.authorName, style: AppTypography.labelSmall),
+                Row(
+                  children: [
+                    Expanded(child: Text(item.authorName, style: AppTypography.labelSmall)),
+                    Text(
+                      _timeAgo(item.timestamp),
+                      style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 4),
                 Text(displayText, style: AppTypography.bodyMedium),
               ],
@@ -650,6 +1198,7 @@ class _QuestionsTab extends ConsumerWidget {
           separatorBuilder: (_, __) => const SizedBox(height: 12),
           itemBuilder: (_, i) {
             final q = questions[i];
+            final isOwner = q.authorUid == uid;
             return GestureDetector(
               onTap: () => Navigator.push(context, MaterialPageRoute(
                 builder: (_) => _QuestionDetailScreen(question: q, groupId: group.id, uid: uid),
@@ -664,7 +1213,20 @@ class _QuestionsTab extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(q.question, style: AppTypography.bodyLarge),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: Text(q.question, style: AppTypography.bodyLarge)),
+                      if (isOwner)
+                        GestureDetector(
+                          onTap: () => _confirmDeleteQuestion(context, group.id, q.id),
+                          child: const Padding(
+                            padding: EdgeInsets.only(left: 8),
+                            child: Icon(Icons.delete_outline, size: 18, color: Colors.redAccent),
+                          ),
+                        ),
+                    ],
+                  ),
                   if (q.scriptureRef != null) ...[
                     const SizedBox(height: 10),
                     Container(
@@ -695,6 +1257,51 @@ class _QuestionsTab extends ConsumerWidget {
         );
       },
     );
+  }
+}
+
+Future<void> _confirmDeleteQuestion(BuildContext context, String groupId, String questionId) async {
+  final confirm = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      backgroundColor: AppColors.cardDark,
+      title: const Text('Delete question?'),
+      content: const Text('This will remove your question and all its replies. This cannot be undone.'),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, true),
+          child: const Text('Delete', style: TextStyle(color: Colors.redAccent)),
+        ),
+      ],
+    ),
+  );
+  if (confirm != true) return;
+  try {
+    final questionRef = FirebaseFirestore.instance
+        .collection('groupQuestions')
+        .doc(groupId)
+        .collection('questions')
+        .doc(questionId);
+
+    // Delete comments subcollection first
+    final commentsSnap = await FirebaseFirestore.instance
+        .collection('groupComments')
+        .doc('${groupId}_$questionId')
+        .collection('comments')
+        .get();
+    final batch = FirebaseFirestore.instance.batch();
+    for (final doc in commentsSnap.docs) {
+      batch.delete(doc.reference);
+    }
+    batch.delete(questionRef);
+    await batch.commit();
+  } catch (e) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not delete question: $e')),
+      );
+    }
   }
 }
 
@@ -777,6 +1384,128 @@ class _LeaderboardTab extends ConsumerWidget {
               ),
             ),
           ],
+        );
+      },
+    );
+  }
+}
+
+// ── Members Tab ───────────────────────────────────────────────────────────────
+
+class _MembersTab extends ConsumerWidget {
+  final Group group;
+  final String currentUid;
+  final void Function(String memberUid)? onRemoveMember;
+
+  const _MembersTab({
+    required this.group,
+    required this.currentUid,
+    this.onRemoveMember,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final membersAsync = ref.watch(groupMembersProvider(group.id));
+
+    return membersAsync.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (_, __) => const Center(child: Text('Could not load members')),
+      data: (members) {
+        // Sort: creator first, then by name
+        final sorted = [...members]..sort((a, b) {
+          if (a.role == GroupRole.creator) return -1;
+          if (b.role == GroupRole.creator) return 1;
+          return a.name.compareTo(b.name);
+        });
+
+        return ListView.separated(
+          padding: const EdgeInsets.all(16),
+          itemCount: sorted.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 8),
+          itemBuilder: (_, i) {
+            final m = sorted[i];
+            final isCreator = m.role == GroupRole.creator;
+            final isMe = m.uid == currentUid;
+            return Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: AppColors.cardDark,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 20,
+                    backgroundColor: isCreator
+                        ? AppColors.warmGold.withOpacity(0.2)
+                        : AppColors.indigoAccent.withOpacity(0.2),
+                    child: Text(
+                      m.name.isNotEmpty ? m.name[0].toUpperCase() : '?',
+                      style: TextStyle(
+                        color: isCreator ? AppColors.warmGold : AppColors.indigoAccent,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Text(
+                              isMe ? '${m.name} (you)' : m.name,
+                              style: AppTypography.labelSmall,
+                            ),
+                            if (isCreator) ...[
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: AppColors.warmGold.withOpacity(0.15),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  'Leader',
+                                  style: AppTypography.bodySmall.copyWith(
+                                    color: AppColors.warmGold,
+                                    fontSize: 10,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        Row(
+                          children: [
+                            const Text('🔥', style: TextStyle(fontSize: 12)),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${m.streak} day streak',
+                              style: AppTypography.bodySmall.copyWith(
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  Text('${m.weeklyXp} XP', style: AppTypography.xpLabel),
+                  if (onRemoveMember != null && !isMe && !isCreator)
+                    GestureDetector(
+                      onTap: () => onRemoveMember!(m.uid),
+                      child: const Padding(
+                        padding: EdgeInsets.only(left: 8),
+                        child: Icon(Icons.person_remove_outlined, size: 18, color: Colors.redAccent),
+                      ),
+                    ),
+                ],
+              ),
+            );
+          },
         );
       },
     );
@@ -874,8 +1603,11 @@ class _PostQuestionSheetState extends State<_PostQuestionSheet> {
               if (_ctrl.text.trim().isEmpty) return;
               setState(() => _submitting = true);
               try {
-                final user = FirebaseAuth.instance.currentUser;
-                final authorName = user?.displayName ?? user?.email?.split('@')[0] ?? 'Member';
+                final userDoc = await FirebaseFirestore.instance.collection('users').doc(widget.uid).get();
+                final profileData = userDoc.data()?['profile'] as Map<String, dynamic>? ?? {};
+                final authorName = (profileData['name'] as String?)?.isNotEmpty == true
+                    ? profileData['name'] as String
+                    : FirebaseAuth.instance.currentUser?.email?.split('@')[0] ?? 'Member';
                 final qUid = FirebaseAuth.instance.currentUser?.uid ?? '';
                 if (qUid.isNotEmpty) { final xs = XpService(); xs.accumulateXp(qUid, XpRewards.postQuestionToGroup); xs.flushSession(qUid).catchError((_){}); }
                 await FirebaseFirestore.instance
@@ -935,8 +1667,11 @@ class _QuestionDetailScreenState extends State<_QuestionDetailScreen> {
     if (_ctrl.text.trim().isEmpty) return;
     setState(() => _submitting = true);
     try {
-      final user = FirebaseAuth.instance.currentUser;
-      final authorName = user?.displayName ?? user?.email?.split('@')[0] ?? 'Member';
+      final userDoc = await FirebaseFirestore.instance.collection('users').doc(widget.uid).get();
+      final profileData = userDoc.data()?['profile'] as Map<String, dynamic>? ?? {};
+      final authorName = (profileData['name'] as String?)?.isNotEmpty == true
+          ? profileData['name'] as String
+          : FirebaseAuth.instance.currentUser?.email?.split('@')[0] ?? 'Member';
       final batch = FirebaseFirestore.instance.batch();
       
       final commentRef = FirebaseFirestore.instance

@@ -3,6 +3,8 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../core/constants/colors.dart';
 import '../../core/constants/typography.dart';
 import '../../core/services/auth_service.dart';
@@ -26,6 +28,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   late SessionLength _sessionLength;
   late StudyLevel _studyLevel;
   late StudyGoal _goal;
+  late TextEditingController _nameCtrl;
   bool _notificationsEnabled = true;
   bool _streakReminderEnabled = true;
   bool _morningFocusEnabled = true;
@@ -39,6 +42,35 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _sessionLength = widget.profile.sessionLength;
     _studyLevel = widget.profile.studyLevel;
     _goal = widget.profile.goal ?? StudyGoal.readMore;
+    _nameCtrl = TextEditingController(text: widget.profile.name);
+    _loadNotificationPrefs();
+  }
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadNotificationPrefs() async {
+    final doc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(widget.profile.uid)
+        .get();
+    if (!doc.exists || !mounted) return;
+    final prefs = (doc.data()?['preferences'] as Map<String, dynamic>?) ?? {};
+    setState(() {
+      _notificationsEnabled = prefs['notificationsEnabled'] as bool? ?? true;
+      _streakReminderEnabled = prefs['streakReminderEnabled'] as bool? ?? true;
+      _morningFocusEnabled   = prefs['morningFocusEnabled']   as bool? ?? true;
+    });
+  }
+
+  Future<void> _saveNotificationPref(String key, bool value) async {
+    await FirebaseFirestore.instance
+        .collection('users')
+        .doc(widget.profile.uid)
+        .update({'preferences.$key': value});
   }
 
   @override
@@ -51,9 +83,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         children: [
           // ── Account ────────────────────────────────────────────────────────
           _SectionHeader('Account'),
-          _InfoTile(
+          _EditableTile(
             label: 'Name',
-            value: widget.profile.name,
+            controller: _nameCtrl,
           ),
           _InfoTile(
             label: 'Email',
@@ -124,14 +156,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             label: 'Notifications',
             subtitle: 'Allow StudyFire to send you notifications',
             value: _notificationsEnabled,
-            onChanged: (v) => setState(() => _notificationsEnabled = v),
+            onChanged: (v) {
+              setState(() => _notificationsEnabled = v);
+              _saveNotificationPref('notificationsEnabled', v);
+            },
           ),
           _SwitchTile(
             label: 'Streak reminders',
             subtitle: 'Daily reminder at 8pm if you haven\'t studied',
             value: _streakReminderEnabled && _notificationsEnabled,
             onChanged: _notificationsEnabled
-                ? (v) => setState(() => _streakReminderEnabled = v)
+                ? (v) {
+                    setState(() => _streakReminderEnabled = v);
+                    _saveNotificationPref('streakReminderEnabled', v);
+                  }
                 : null,
           ),
           _SwitchTile(
@@ -139,7 +177,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             subtitle: 'A short thought at 9:30am',
             value: _morningFocusEnabled && _notificationsEnabled,
             onChanged: _notificationsEnabled
-                ? (v) => setState(() => _morningFocusEnabled = v)
+                ? (v) {
+                    setState(() => _morningFocusEnabled = v);
+                    _saveNotificationPref('morningFocusEnabled', v);
+                  }
                 : null,
           ),
 
@@ -171,6 +212,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             onTap: () => _confirmDeleteAccount(context),
           ),
 
+          const SizedBox(height: 24),
+
+          // ── Legal ──────────────────────────────────────────────────────────
+          _SectionHeader('Legal'),
+          _ActionTile(
+            icon: Icons.menu_book_outlined,
+            label: 'Bible translation licenses',
+            color: AppColors.warmWhite,
+            onTap: () => _showLicenses(context),
+          ),
+
           const SizedBox(height: 32),
 
           FlameCTAButton(
@@ -196,13 +248,29 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Future<void> _save() async {
     setState(() => _saving = true);
     try {
-      await FirestoreService().updatePreferences(
+      final service = FirestoreService();
+      final newName = _nameCtrl.text.trim();
+      if (newName.isNotEmpty) {
+        await service.updateDisplayName(widget.profile.uid, newName);
+      }
+      await service.updatePreferences(
         widget.profile.uid,
         version: _version,
         sessionLength: _sessionLength,
         studyLevel: _studyLevel,
         goal: _goal,
       );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Settings saved!')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Save failed: $e')),
+        );
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -285,11 +353,131 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           TextButton(
             onPressed: () {
               Navigator.pop(context);
-              // TODO: Cloud Function to delete user data + Firebase Auth delete
+              _deleteAccount(context);
             },
             child: const Text('Delete', style: TextStyle(color: Colors.redAccent)),
           ),
         ],
+      ),
+    );
+  }
+
+  Future<void> _deleteAccount(BuildContext context) async {
+    final uid = widget.profile.uid;
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    // Show progress
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        backgroundColor: AppColors.cardDark,
+        content: Row(
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 20),
+            Text('Deleting account…'),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      final db = FirebaseFirestore.instance;
+
+      // Delete subcollections the client can reach
+      final collections = ['journalEntries', 'memoryVerses', 'studycache'];
+      for (final col in collections) {
+        final snap = await db.collection('users').doc(uid).collection(col).get();
+        for (final doc in snap.docs) {
+          await doc.reference.delete();
+        }
+      }
+
+      // Delete the user document itself
+      await db.collection('users').doc(uid).delete();
+
+      // Delete Firebase Auth account (requires recent sign-in — may throw
+      // requiresRecentLogin; we catch that and show a re-auth prompt)
+      await user.delete();
+
+      if (context.mounted) Navigator.of(context).popUntil((r) => r.isFirst);
+    } on FirebaseAuthException catch (e) {
+      if (context.mounted) Navigator.pop(context); // dismiss progress dialog
+      if (e.code == 'requires-recent-login') {
+        // Sign the user out; on next sign-in they can retry deletion
+        await FirebaseAuth.instance.signOut();
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Please sign in again, then delete your account.'),
+            ),
+          );
+        }
+      } else {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(e.message ?? 'Delete failed. Try again.')),
+          );
+        }
+      }
+    } catch (e) {
+      if (context.mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Delete failed. Try again.')),
+        );
+      }
+    }
+  }
+
+  void _showLicenses(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.cardDark,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => DraggableScrollableSheet(
+        initialChildSize: 0.6,
+        minChildSize: 0.4,
+        maxChildSize: 0.9,
+        expand: false,
+        builder: (_, controller) => ListView(
+          controller: controller,
+          padding: const EdgeInsets.fromLTRB(24, 16, 24, 40),
+          children: [
+            Center(
+              child: Container(
+                width: 36, height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.textSecondary,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            const Text('Bible Translation Licenses', style: AppTypography.displaySmall),
+            const SizedBox(height: 24),
+
+            _LicenseEntry(
+              version: 'KJV — King James Version',
+              notice: 'The King James Version of the Bible is in the public domain in the United States.',
+            ),
+            const SizedBox(height: 16),
+            _LicenseEntry(
+              version: 'NIV — New International Version',
+              notice: 'Scripture quotations marked NIV are taken from the Holy Bible, New International Version®, NIV®. Copyright © 1973, 1978, 1984, 2011 by Biblica, Inc.® Used by permission. All rights reserved worldwide.',
+            ),
+            const SizedBox(height: 16),
+            _LicenseEntry(
+              version: 'CSB — Christian Standard Bible',
+              notice: 'Scripture quotations marked CSB have been taken from the Christian Standard Bible®. Copyright © 2017 by Holman Bible Publishers. Used by permission. Christian Standard Bible® and CSB® are federally registered trademarks of Holman Bible Publishers.',
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -404,6 +592,46 @@ class _SectionHeader extends StatelessWidget {
           color: AppColors.textSecondary,
           letterSpacing: 1.2,
         ),
+      ),
+    );
+  }
+}
+
+// ── Editable Tile ─────────────────────────────────────────────────────────────
+
+class _EditableTile extends StatelessWidget {
+  final String label;
+  final TextEditingController controller;
+
+  const _EditableTile({required this.label, required this.controller});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppColors.cardDark,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Text(label, style: AppTypography.bodyMedium),
+          const SizedBox(width: 16),
+          Expanded(
+            child: TextField(
+              controller: controller,
+              textAlign: TextAlign.right,
+              style: AppTypography.bodyMedium.copyWith(color: AppColors.warmGold),
+              decoration: const InputDecoration(
+                border: InputBorder.none,
+                hintText: 'Enter your name',
+                isDense: true,
+                contentPadding: EdgeInsets.symmetric(vertical: 14),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -592,6 +820,37 @@ class _SegmentedTile<T> extends StatelessWidget {
                 ),
               );
             }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── License Entry ─────────────────────────────────────────────────────────────
+
+class _LicenseEntry extends StatelessWidget {
+  final String version;
+  final String notice;
+
+  const _LicenseEntry({required this.version, required this.notice});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(version, style: AppTypography.labelMedium),
+          const SizedBox(height: 8),
+          Text(
+            notice,
+            style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary),
           ),
         ],
       ),

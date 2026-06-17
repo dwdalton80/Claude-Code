@@ -30,7 +30,7 @@ class ProfileScreen extends ConsumerWidget {
     final user = FirebaseAuth.instance.currentUser;
     final profileAsync = ref.watch(currentProfileProvider);
 
-    final name = user?.displayName ?? user?.email?.split('@')[0] ?? 'Friend';
+    final fallbackName = user?.displayName ?? user?.email?.split('@')[0] ?? 'Friend';
     final avatarUrl = user?.photoURL;
 
     return profileAsync.when(
@@ -38,8 +38,12 @@ class ProfileScreen extends ConsumerWidget {
         backgroundColor: Color(0xFF0F1120),
         body: Center(child: CircularProgressIndicator()),
       ),
-      error: (_, __) => _buildScaffold(context, ref, name, avatarUrl, null),
-      data: (profile) => _buildScaffold(context, ref, name, avatarUrl, profile),
+      error: (_, __) => _buildScaffold(context, ref, fallbackName, avatarUrl, null),
+      data: (profile) => _buildScaffold(
+        context, ref,
+        (profile?.name?.isNotEmpty == true) ? profile!.name : fallbackName,
+        avatarUrl, profile,
+      ),
     );
   }
 
@@ -64,6 +68,7 @@ class ProfileScreen extends ConsumerWidget {
                 xp: xp,
                 nextLevelXp: nextXp,
                 avatarUrl: avatarUrl,
+                onSettingsTap: () => showSettingsSheet(context, profile),
               ),
             ),
           ),
@@ -99,6 +104,7 @@ class _HeroSection extends StatelessWidget {
   final int xp;
   final int nextLevelXp;
   final String? avatarUrl;
+  final VoidCallback? onSettingsTap;
 
   const _HeroSection({
     required this.name,
@@ -106,6 +112,7 @@ class _HeroSection extends StatelessWidget {
     required this.xp,
     required this.nextLevelXp,
     this.avatarUrl,
+    this.onSettingsTap,
   });
 
   @override
@@ -171,7 +178,7 @@ class _HeroSection extends StatelessWidget {
               ),
               IconButton(
                 icon: const Icon(Icons.settings_outlined, color: AppColors.textSecondary),
-                onPressed: () => _showSettings(context),
+                onPressed: onSettingsTap,
               ),
             ],
           ),
@@ -214,6 +221,8 @@ class _HeroSection extends StatelessWidget {
       );
     }
   }
+}
+
 void _exportPdf(BuildContext context) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
@@ -265,7 +274,7 @@ void _exportPdf(BuildContext context) async {
       );
     }
   }
-  void _showSettings(BuildContext context) {
+void showSettingsSheet(BuildContext context, dynamic profile) {
     showModalBottomSheet(
       useRootNavigator: true,
       context: context,
@@ -281,6 +290,15 @@ void _exportPdf(BuildContext context) async {
           children: [
             const Text('Settings', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white)),
             const SizedBox(height: 24),
+            ListTile(
+              leading: const Icon(Icons.person_outline, color: Colors.white70),
+              title: const Text('Edit Profile', style: TextStyle(color: Colors.white)),
+              trailing: const Icon(Icons.chevron_right, color: Colors.white38),
+              onTap: () {
+                Navigator.pop(context);
+                context.push('/profile/settings', extra: {'profile': profile});
+              },
+            ),
             ListTile(
               leading: const Icon(Icons.notifications_outlined, color: Colors.white70),
               title: const Text('Notifications', style: TextStyle(color: Colors.white)),
@@ -319,8 +337,6 @@ void _exportPdf(BuildContext context) async {
         ),
       ),
     );
-  }
-
 }
 
 class _StatsRow extends StatelessWidget {

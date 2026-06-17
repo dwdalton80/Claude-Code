@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:go_router/go_router.dart';
 import '../../core/constants/colors.dart';
 import '../../core/constants/typography.dart';
 import '../../core/constants/xp_rewards.dart';
@@ -85,19 +86,36 @@ class _WordOfDayScreenState extends State<WordOfDayScreen> {
   }
 
   Future<void> _load() async {
-    await Future.delayed(const Duration(milliseconds: 500));
-    // Mock — production: load from dailycache
+    try {
+      final today = DateTime.now().toIso8601String().split('T')[0];
+      final doc = await FirebaseFirestore.instance
+          .collection('dailycache')
+          .doc(today)
+          .get();
+
+      if (doc.exists) {
+        final raw = doc.data()?['wordOfDay'];
+        if (raw != null) {
+          _data = WordOfDayData.fromMap(Map<String, dynamic>.from(raw as Map));
+          setState(() => _loading = false);
+          _trackWordExplored();
+          return;
+        }
+      }
+    } catch (_) {}
+
+    // Fallback: show a static word if Firestore has nothing yet
     _data = const WordOfDayData(
-      word: 'love',
-      originalWord: 'ἀγάπη',
-      transliteration: 'agape',
-      pronunciation: 'ah-GAH-pay',
-      strongsNumber: 'G26',
+      word: 'Grace',
+      originalWord: 'χάρις',
+      transliteration: 'charis',
+      pronunciation: 'KAH-ris',
+      strongsNumber: 'G5485',
       language: 'greek',
-      plainDefinition: 'Unconditional, self-giving love — not based on feelings but on choice.',
-      funFact: 'The word for "love" here is agape — not friendship love (phileo) or romantic love (eros), but a love that chooses to act regardless of how you feel. It\'s the word used in John 3:16 and 1 Corinthians 13.',
-      otherPassages: ['John 3:16', '1 Corinthians 13:4', 'Romans 5:8'],
-      fromReference: 'Romans 8:28',
+      plainDefinition: 'Unmerited favor — a gift freely given with no strings attached.',
+      funFact: 'Charis appears over 150 times in the New Testament. It\'s the root of "charisma" and captures the idea that God\'s love isn\'t earned — it\'s given.',
+      otherPassages: ['Ephesians 2:8', 'Romans 5:8', '2 Corinthians 12:9'],
+      fromReference: 'Ephesians 2:8-9',
     );
     setState(() => _loading = false);
     _trackWordExplored();
@@ -110,6 +128,41 @@ class _WordOfDayScreenState extends State<WordOfDayScreen> {
         .doc(widget.uid)
         .update({'profile.wordsExplored': FieldValue.increment(1)})
         .catchError((_) {});
+  }
+
+  static const _bookIds = {
+    'Genesis': 'gen', 'Exodus': 'exo', 'Leviticus': 'lev', 'Numbers': 'num',
+    'Deuteronomy': 'deu', 'Joshua': 'jos', 'Judges': 'jdg', 'Ruth': 'rut',
+    '1 Samuel': '1sa', '2 Samuel': '2sa', '1 Kings': '1ki', '2 Kings': '2ki',
+    '1 Chronicles': '1ch', '2 Chronicles': '2ch', 'Ezra': 'ezr', 'Nehemiah': 'neh',
+    'Esther': 'est', 'Job': 'job', 'Psalms': 'psa', 'Psalm': 'psa', 'Proverbs': 'pro',
+    'Ecclesiastes': 'ecc', 'Song of Solomon': 'sng', 'Isaiah': 'isa',
+    'Jeremiah': 'jer', 'Lamentations': 'lam', 'Ezekiel': 'ezk', 'Daniel': 'dan',
+    'Hosea': 'hos', 'Joel': 'jol', 'Amos': 'amo', 'Obadiah': 'oba',
+    'Jonah': 'jon', 'Micah': 'mic', 'Nahum': 'nam', 'Habakkuk': 'hab',
+    'Zephaniah': 'zep', 'Haggai': 'hag', 'Zechariah': 'zec', 'Malachi': 'mal',
+    'Matthew': 'mat', 'Mark': 'mrk', 'Luke': 'luk', 'John': 'jhn',
+    'Acts': 'act', 'Romans': 'rom', '1 Corinthians': '1co', '2 Corinthians': '2co',
+    'Galatians': 'gal', 'Ephesians': 'eph', 'Philippians': 'php', 'Colossians': 'col',
+    '1 Thessalonians': '1th', '2 Thessalonians': '2th', '1 Timothy': '1ti',
+    '2 Timothy': '2ti', 'Titus': 'tit', 'Philemon': 'phm', 'Hebrews': 'heb',
+    'James': 'jas', '1 Peter': '1pe', '2 Peter': '2pe', '1 John': '1jn',
+    '2 John': '2jn', '3 John': '3jn', 'Jude': 'jud', 'Revelation': 'rev',
+  };
+
+  void _openPassage(String ref) {
+    final match = RegExp(r'^(.+?)\s+(\d+)(?::(\d+))?$').firstMatch(ref.trim());
+    if (match == null) return;
+    final bookId = _bookIds[match.group(1)!] ??
+        match.group(1)!.toLowerCase().replaceAll(' ', '_');
+    final chapter = int.tryParse(match.group(2) ?? '1') ?? 1;
+    final verse = int.tryParse(match.group(3) ?? '1') ?? 1;
+    context.push('/reader', extra: {
+      'book': bookId,
+      'chapter': chapter,
+      'startVerse': verse,
+      'version': 'kjv',
+    });
   }
 
   void _react() {
@@ -191,7 +244,7 @@ class _WordOfDayScreenState extends State<WordOfDayScreen> {
           SingleChildScrollView(
             padding: const EdgeInsets.all(24),
             child: _showExplorer
-                ? _FullExplorer(data: d, onPassageTap: (_) {})
+                ? _FullExplorer(data: d, onPassageTap: _openPassage)
                 : _WordCard(
                     data: d,
                     reacted: _reacted,

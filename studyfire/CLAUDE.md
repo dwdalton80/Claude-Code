@@ -182,8 +182,8 @@ const raw = (request as any).data ?? (request as any).body?.data ?? request ?? {
 - Real user data, photo upload
 - XP/streak real-time stream
 - Badges from Firestore, tap to share
-- Study Stats: HARDCODED (pre-launch task)
-- Books Read: HARDCODED (pre-launch task)
+- Study Stats: wired to real Firestore data ✅
+- Books Read: wired to highlights collection ✅
 
 ### Settings Sheet
 - Notifications (opens iOS Settings)
@@ -257,13 +257,13 @@ const raw = (request as any).data ?? (request as any).body?.data ?? request ?? {
 - [ ] Confirm scripts/gen_quiz.js in .gitignore
 
 ### Data
-- [ ] Wire Study Stats to real Firestore data
-- [ ] Wire Books Read to reading history
+- [x] Wire Study Stats to real Firestore data ✅
+- [x] Wire Books Read to reading history ✅
 - [ ] Verify streak logic over multiple days
 
 ### Content
 - [ ] Larger quiz question bank (20+ per topic)
-- [ ] Seed sparkcache for coming week
+- [x] Sparkcache auto-seeded by generateDailySpark function (rotating 54-passage list) ✅
 - [ ] Verify focusVerse in dailycache
 
 ### Infrastructure

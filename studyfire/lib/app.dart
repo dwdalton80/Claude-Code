@@ -81,6 +81,7 @@ final routerProvider = Provider<GoRouter>((ref) {
                 uid: user?.uid ?? '',
                 book: extra?['book'] as String? ?? 'jhn',
                 chapter: extra?['chapter'] as int? ?? 3,
+                startVerse: extra?['startVerse'] as int?,
                 version: extra?['version'] as String? ?? 'kjv',
               );
             },
@@ -153,6 +154,7 @@ final routerProvider = Provider<GoRouter>((ref) {
             reference: extra?['reference'] as String? ?? '',
             version: extra?['version'] as String? ?? 'kjv',
             uid: user?.uid ?? '',
+            passageId: extra?['passageId'] as String?,
           );
         },
       ),

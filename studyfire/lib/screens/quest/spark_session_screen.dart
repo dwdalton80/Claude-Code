@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/constants/colors.dart';
+import '../../core/constants/session_length.dart';
 import '../../core/constants/typography.dart';
 import '../../core/constants/xp_rewards.dart';
 import '../../core/services/firestore_service.dart';
@@ -14,17 +15,22 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../../models/group.dart';
 import '../../core/services/group_activity_service.dart';
 import '../../app.dart';
+import 'package:confetti/confetti.dart';
+import 'package:go_router/go_router.dart';
+import '../journal/journal_screen.dart';
 
 class SparkSessionScreen extends ConsumerStatefulWidget {
   final String passageId; // e.g. "rom_8_28"
   final String reference; // e.g. "Romans 8:28"
   final String version;
+  final SessionLength sessionLength;
 
   const SparkSessionScreen({
     super.key,
     required this.passageId,
     required this.reference,
     required this.version,
+    this.sessionLength = SessionLength.spark,
   });
 
   @override
@@ -46,6 +52,7 @@ class _SparkSessionScreenState extends ConsumerState<SparkSessionScreen>
   bool _showResponse = false;
   bool _completed = false;
   StreakUpdateResult? _streakResult;
+  List<String> _newBadges = [];
 
   final _responseController = TextEditingController();
   late AnimationController _progressController;
@@ -138,7 +145,8 @@ class _SparkSessionScreenState extends ConsumerState<SparkSessionScreen>
     final uid = ref.read(authStreamProvider).valueOrNull?.uid ?? '';
     if (uid.isNotEmpty) {
       _xpService.accumulateXp(uid, XpRewards.completeSparkSession);
-      await _xpService.flushSession(uid);
+      final xpResult = await _xpService.flushSession(uid);
+      _newBadges = xpResult.newBadges;
 
       // Record today's study activity — updates streak, longest streak,
       // grace day, and totalStudyDays. Idempotent: a no-op if already
@@ -148,12 +156,8 @@ class _SparkSessionScreenState extends ConsumerState<SparkSessionScreen>
         // Award streak milestone bonus XP
         if (_streakResult?.milestoneReached != null) {
           _xpService.accumulateXp(uid, XpRewards.sevenDayStreakBonus);
-          await _xpService.flushSession(uid);
-        }
-        // Award streak milestone bonus XP
-        if (_streakResult?.milestoneReached != null) {
-          _xpService.accumulateXp(uid, XpRewards.sevenDayStreakBonus);
-          await _xpService.flushSession(uid);
+          final bonusResult = await _xpService.flushSession(uid);
+          _newBadges = [..._newBadges, ...bonusResult.newBadges];
         }
       } catch (_) {
         // Non-fatal — XP still saved even if streak write fails
@@ -191,9 +195,14 @@ class _SparkSessionScreenState extends ConsumerState<SparkSessionScreen>
   Widget build(BuildContext context) {
     if (_completed) return _CompletionScreen(
       reference: widget.reference,
+      passageId: widget.passageId,
+      verseText: _verseText ?? '',
+      version: widget.version,
       xp: XpRewards.completeSparkSession,
       streak: _streakResult?.newStreak,
       milestoneReached: _streakResult?.milestoneReached,
+      newBadges: _newBadges,
+      sessionLength: widget.sessionLength,
       onDone: () => Navigator.pop(context),
     );
 
@@ -417,25 +426,64 @@ class _SparkProgressBar extends StatelessWidget {
   }
 }
 
-class _CompletionScreen extends StatelessWidget {
+class _CompletionScreen extends StatefulWidget {
   final String reference;
+  final String passageId;
+  final String verseText;
+  final String version;
   final int xp;
   final int? streak;
   final int? milestoneReached;
+  final List<String> newBadges;
+  final SessionLength sessionLength;
   final VoidCallback onDone;
 
   const _CompletionScreen({
     required this.reference,
+    required this.passageId,
+    required this.verseText,
+    required this.version,
     required this.xp,
     required this.streak,
     required this.milestoneReached,
+    required this.newBadges,
+    required this.sessionLength,
     required this.onDone,
   });
 
   @override
+  State<_CompletionScreen> createState() => _CompletionScreenState();
+}
+
+class _CompletionScreenState extends State<_CompletionScreen> {
+  @override
+  void initState() {
+    super.initState();
+    if (widget.newBadges.isNotEmpty) {
+      // Show badge celebration after a short delay so the completion screen renders first
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        Future.delayed(const Duration(milliseconds: 600), () {
+          if (mounted) _showBadgeCelebration(widget.newBadges.first);
+        });
+      });
+    }
+  }
+
+  void _showBadgeCelebration(String badgeId) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _BadgeCelebrationDialog(
+        badgeId: badgeId,
+        onDone: () => Navigator.pop(context),
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final hasStreak = streak != null && streak! > 0;
-    final hitMilestone = milestoneReached != null;
+    final hasStreak = widget.streak != null && widget.streak! > 0;
+    final hitMilestone = widget.milestoneReached != null;
 
     return Scaffold(
       backgroundColor: AppColors.deepSlate,
@@ -449,18 +497,18 @@ class _CompletionScreen extends StatelessWidget {
                 const Text('🔥', style: TextStyle(fontSize: 64)),
                 const SizedBox(height: 24),
                 Text(
-                  hitMilestone ? '$milestoneReached-Day Streak!' : 'Spark Complete!',
+                  hitMilestone ? '${widget.milestoneReached}-Day Streak!' : 'Spark Complete!',
                   style: AppTypography.displayMedium,
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  reference,
+                  widget.reference,
                   style: AppTypography.bodyMedium.copyWith(color: AppColors.warmGold),
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  '+$xp XP earned',
+                  '+${widget.xp} XP earned',
                   style: AppTypography.labelLarge.copyWith(color: AppColors.warmGold),
                 ),
                 if (hasStreak) ...[
@@ -478,7 +526,7 @@ class _CompletionScreen extends StatelessWidget {
                         const Text('🔥', style: TextStyle(fontSize: 20)),
                         const SizedBox(width: 8),
                         Text(
-                          '$streak day${streak == 1 ? '' : 's'} in a row',
+                          '${widget.streak} day${widget.streak == 1 ? '' : 's'} in a row',
                           style: AppTypography.labelMedium.copyWith(
                             color: AppColors.warmGold,
                           ),
@@ -488,15 +536,204 @@ class _CompletionScreen extends StatelessWidget {
                   ),
                 ],
                 const SizedBox(height: 48),
-                FlameCTAButton(
-                  label: 'Done',
-                  onPressed: onDone,
-                ),
+                if (widget.sessionLength == SessionLength.spark) ...[
+                  FlameCTAButton(
+                    label: 'Done',
+                    onPressed: widget.onDone,
+                  ),
+                ] else if (widget.sessionLength == SessionLength.short) ...[
+                  FlameCTAButton(
+                    label: 'Go Deeper →',
+                    onPressed: () {
+                      widget.onDone();
+                      Future.microtask(() {
+                        if (context.mounted) {
+                          context.push('/ai-study', extra: {
+                            'passage': widget.verseText,
+                            'reference': widget.reference,
+                            'version': widget.version,
+                            'passageId': widget.passageId,
+                          });
+                        }
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextButton(
+                    onPressed: widget.onDone,
+                    child: const Text('Skip — I\'m done', style: AppTypography.bodySmall),
+                  ),
+                ] else ...[
+                  // Deep — AI Study + Journal
+                  FlameCTAButton(
+                    label: 'Go Deeper →',
+                    onPressed: () {
+                      widget.onDone();
+                      Future.microtask(() {
+                        if (context.mounted) {
+                          context.push('/ai-study', extra: {
+                            'passage': widget.verseText,
+                            'reference': widget.reference,
+                            'version': widget.version,
+                            'passageId': widget.passageId,
+                          });
+                        }
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  OutlinedButton(
+                    onPressed: () {
+                      widget.onDone();
+                      Future.microtask(() {
+                        if (context.mounted) {
+                          Navigator.of(context, rootNavigator: true).push(
+                            MaterialPageRoute(
+                              builder: (_) => NoteEditorScreen(
+                                verseRef: widget.reference,
+                                verseText: widget.verseText,
+                              ),
+                            ),
+                          );
+                        }
+                      });
+                    },
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size(double.infinity, 48),
+                      side: BorderSide(color: AppColors.indigoAccent.withOpacity(0.6)),
+                      foregroundColor: AppColors.warmWhite,
+                    ),
+                    child: const Text('Add Journal Entry'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextButton(
+                    onPressed: widget.onDone,
+                    child: const Text('Skip — I\'m done', style: AppTypography.bodySmall),
+                  ),
+                ],
               ],
             ),
           ),
         ),
       ),
+    );
+  }
+}
+
+// ── Badge Celebration Dialog ──────────────────────────────────────────────────
+
+class _BadgeCelebrationDialog extends StatefulWidget {
+  final String badgeId;
+  final VoidCallback onDone;
+
+  const _BadgeCelebrationDialog({required this.badgeId, required this.onDone});
+
+  @override
+  State<_BadgeCelebrationDialog> createState() => _BadgeCelebrationDialogState();
+}
+
+class _BadgeCelebrationDialogState extends State<_BadgeCelebrationDialog>
+    with SingleTickerProviderStateMixin {
+  late final ConfettiController _confetti;
+  late final AnimationController _scaleCtrl;
+  late final Animation<double> _scale;
+
+  static const _badgeInfo = {
+    'spark':           ('Spark',          'assets/images/badges/badge_spark.png',          '100 XP milestone'),
+    'on_fire':         ('On Fire',         'assets/images/badges/badge_on_fire.png',         '500 XP milestone'),
+    'burning_bright':  ('Burning Bright',  'assets/images/badges/badge_burning_bright.png',  '1,500 XP milestone'),
+    'unquenchable':    ('Unquenchable',    'assets/images/badges/badge_unquenchable.png',    '3,500 XP milestone'),
+    'flame_keeper':    ('Flame Keeper',    'assets/images/badges/badge_flame_keeper.png',    '7,000 XP milestone'),
+    'eternal_flame':   ('Eternal Flame',   'assets/images/badges/badge_eternal_flame.png',   '12,000 XP milestone'),
+    'first_verse':     ('First Verse',     'assets/images/badges/badge_first_verse.png',     'First verse memorized'),
+    'ten_verses':      ('Ten Verses',      'assets/images/badges/badge_ten_verses.png',      '10 verses memorized'),
+    'comeback':        ('Comeback',        'assets/images/badges/badge_comeback.png',        'Returned after 7+ days'),
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    _confetti = ConfettiController(duration: const Duration(seconds: 3))..play();
+    _scaleCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+    _scale = CurvedAnimation(parent: _scaleCtrl, curve: Curves.elasticOut);
+    _scaleCtrl.forward();
+  }
+
+  @override
+  void dispose() {
+    _confetti.dispose();
+    _scaleCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final info = _badgeInfo[widget.badgeId];
+    final name = info?.$1 ?? 'Badge Earned';
+    final imagePath = info?.$2 ?? 'assets/images/badges/badge_spark.png';
+    final subtitle = info?.$3 ?? 'Achievement unlocked';
+
+    return Stack(
+      alignment: Alignment.topCenter,
+      children: [
+        // Confetti behind the dialog
+        ConfettiWidget(
+          confettiController: _confetti,
+          blastDirectionality: BlastDirectionality.explosive,
+          colors: const [
+            AppColors.warmGold,
+            AppColors.flameOrange,
+            AppColors.emerald,
+            Colors.white,
+          ],
+          numberOfParticles: 40,
+          gravity: 0.3,
+        ),
+        Dialog(
+          backgroundColor: AppColors.cardDark,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 40),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '🏆 Badge Earned!',
+                  style: AppTypography.labelSmall.copyWith(
+                    color: AppColors.warmGold,
+                    letterSpacing: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                ScaleTransition(
+                  scale: _scale,
+                  child: Image.asset(imagePath, width: 120, height: 120),
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  name,
+                  style: AppTypography.displaySmall,
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  subtitle,
+                  style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 32),
+                FlameCTAButton(
+                  label: 'Awesome! 🔥',
+                  onPressed: widget.onDone,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

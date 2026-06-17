@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:go_router/go_router.dart';
 import '../../core/constants/colors.dart';
 import '../../core/constants/typography.dart';
 import '../../core/constants/xp_rewards.dart';
@@ -44,6 +47,7 @@ class AiStudyScreen extends ConsumerStatefulWidget {
   final String reference;
   final String version;
   final String uid;
+  final String? passageId;
   final AiStudyData? preloaded; // if called from cached Spark result
 
   const AiStudyScreen({
@@ -52,6 +56,7 @@ class AiStudyScreen extends ConsumerStatefulWidget {
     required this.reference,
     required this.version,
     required this.uid,
+    this.passageId,
     this.preloaded,
   });
 
@@ -98,29 +103,32 @@ class _AiStudyScreenState extends ConsumerState<AiStudyScreen> {
   Future<void> _loadStudy() async {
     setState(() { _loading = true; _error = null; });
     try {
-      // TODO: call Cloud Function getAiStudy
-      // final result = await FirebaseFunctions.instance.httpsCallable('getAiStudy').call({...});
-      // _data = AiStudyData.fromMap(result.data);
+      final fn = FirebaseFunctions.instanceFor(region: 'us-central1')
+          .httpsCallable('getAiStudy', options: HttpsCallableOptions(timeout: const Duration(seconds: 30)));
 
-      // Mock while wiring:
-      await Future.delayed(const Duration(milliseconds: 800));
-      _data = AiStudyData(
-        questions: [
-          'What word or phrase stands out most to you in this passage?',
-          'What does this verse say about God\'s character?',
-          'How does this connect to something you\'ve experienced recently?',
-          'If a friend asked you what this passage means, what would you say?',
-          'What\'s one thing you want to remember from today\'s reading?',
-        ],
-        contextBrief: 'This passage comes from Paul\'s letter to the Romans, written around 57 AD. Paul is addressing a mixed community of Jewish and Gentile believers in Rome.',
-        tldr: 'Paul reassures believers that God is in control, even when circumstances feel chaotic.',
-        themes: ['Sovereignty', 'Hope', 'Trust'],
-        crossRefs: ['Jeremiah 29:11', 'Philippians 4:6–7', 'Psalm 23:1'],
-        characterSpotlight: null,
-        devotionalPrompt: 'Where in your life right now do you most need to trust that God is at work?',
-      );
+      // Derive a stable cache key: use passageId if provided, else slug the reference
+      final passageId = widget.passageId ??
+          widget.reference.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '_');
+
+      final result = await fn.call({
+        'passageId': passageId,
+        'passageText': widget.passage,
+        'reference': widget.reference,
+        'version': widget.version,
+        'studyLevel': 'beginner',
+        'studyGoal': 'devotional',
+        'topicTagMastery': <String, String>{},
+        'recentQuizHistory': <String>[],
+      });
+
+      _data = AiStudyData.fromMap(Map<String, dynamic>.from(result.data as Map));
       _answers.addAll(List.filled(_data!.questions.length, ''));
       setState(() => _loading = false);
+    } on FirebaseFunctionsException catch (e) {
+      setState(() {
+        _loading = false;
+        _error = e.message ?? 'Could not load study. Try again.';
+      });
     } catch (e) {
       setState(() {
         _loading = false;
@@ -170,6 +178,44 @@ class _AiStudyScreenState extends ConsumerState<AiStudyScreen> {
         _aiFeedback = null;
       });
     }
+  }
+
+  static const _bookIds = {
+    'Genesis': 'gen', 'Exodus': 'exo', 'Leviticus': 'lev', 'Numbers': 'num',
+    'Deuteronomy': 'deu', 'Joshua': 'jos', 'Judges': 'jdg', 'Ruth': 'rut',
+    '1 Samuel': '1sa', '2 Samuel': '2sa', '1 Kings': '1ki', '2 Kings': '2ki',
+    '1 Chronicles': '1ch', '2 Chronicles': '2ch', 'Ezra': 'ezr', 'Nehemiah': 'neh',
+    'Esther': 'est', 'Job': 'job', 'Psalms': 'psa', 'Psalm': 'psa', 'Proverbs': 'pro',
+    'Ecclesiastes': 'ecc', 'Song of Solomon': 'sng', 'Isaiah': 'isa',
+    'Jeremiah': 'jer', 'Lamentations': 'lam', 'Ezekiel': 'ezk', 'Daniel': 'dan',
+    'Hosea': 'hos', 'Joel': 'jol', 'Amos': 'amo', 'Obadiah': 'oba',
+    'Jonah': 'jon', 'Micah': 'mic', 'Nahum': 'nam', 'Habakkuk': 'hab',
+    'Zephaniah': 'zep', 'Haggai': 'hag', 'Zechariah': 'zec', 'Malachi': 'mal',
+    'Matthew': 'mat', 'Mark': 'mrk', 'Luke': 'luk', 'John': 'jhn',
+    'Acts': 'act', 'Romans': 'rom', '1 Corinthians': '1co', '2 Corinthians': '2co',
+    'Galatians': 'gal', 'Ephesians': 'eph', 'Philippians': 'php', 'Colossians': 'col',
+    '1 Thessalonians': '1th', '2 Thessalonians': '2th', '1 Timothy': '1ti',
+    '2 Timothy': '2ti', 'Titus': 'tit', 'Philemon': 'phm', 'Hebrews': 'heb',
+    'James': 'jas', '1 Peter': '1pe', '2 Peter': '2pe', '1 John': '1jn',
+    '2 John': '2jn', '3 John': '3jn', 'Jude': 'jud', 'Revelation': 'rev',
+  };
+
+  void _openCrossReference(String ref) {
+    // Parse "Book Chapter:Verse" or "Book Chapter"
+    final match = RegExp(r'^(.+?)\s+(\d+)(?::(\d+))?$').firstMatch(ref.trim());
+    if (match == null) return;
+
+    final bookName = match.group(1)!;
+    final chapter = int.tryParse(match.group(2) ?? '1') ?? 1;
+    final verse = int.tryParse(match.group(3) ?? '1') ?? 1;
+    final bookId = _bookIds[bookName] ?? bookName.toLowerCase().replaceAll(' ', '_');
+
+    context.push('/reader', extra: {
+      'book': bookId,
+      'chapter': chapter,
+      'startVerse': verse,
+      'version': widget.version,
+    });
   }
 
   void _skipQuestion() {
@@ -231,7 +277,6 @@ class _AiStudyScreenState extends ConsumerState<AiStudyScreen> {
           _completed ? _CompletionView(
             xpEarned: _totalXp,
             onDone: () => Navigator.pop(context),
-            onPostToGroup: () {},
           ) : _StudyView(
             data: _data!,
             currentQuestion: _currentQuestion,
@@ -244,9 +289,7 @@ class _AiStudyScreenState extends ConsumerState<AiStudyScreen> {
             onSubmit: _submitAnswer,
             onSkip: _skipQuestion,
             onNext: _nextQuestion,
-            onScriptureChipTap: (ref) {
-              // Open that passage in reader bottom sheet
-            },
+            onScriptureChipTap: (ref) => _openCrossReference(ref),
           ),
           if (_showXpBurst)
             XpBurstOverlay(
@@ -524,12 +567,10 @@ class _ScriptureChip extends StatelessWidget {
 class _CompletionView extends StatelessWidget {
   final int xpEarned;
   final VoidCallback onDone;
-  final VoidCallback onPostToGroup;
 
   const _CompletionView({
     required this.xpEarned,
     required this.onDone,
-    required this.onPostToGroup,
   });
 
   @override
@@ -546,11 +587,6 @@ class _CompletionView extends StatelessWidget {
           Text('+$xpEarned XP', style: AppTypography.xpDisplay),
           const SizedBox(height: 48),
           FlameCTAButton(label: 'Done', onPressed: onDone),
-          const SizedBox(height: 12),
-          OutlinedButton(
-            onPressed: onPostToGroup,
-            child: const Text('Post a question to group'),
-          ),
         ],
       ),
     );

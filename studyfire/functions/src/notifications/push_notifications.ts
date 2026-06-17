@@ -88,8 +88,14 @@ export async function sendStreakReminders(): Promise<void> {
     .get();
 
   const promises = usersSnap.docs.map(async (doc) => {
-    const profile = doc.data().profile as Record<string, unknown>;
+    const data = doc.data();
+    const profile = data.profile as Record<string, unknown>;
+    const prefs = (data.preferences ?? {}) as Record<string, unknown>;
     const uid = doc.id;
+
+    // Respect user notification preferences (default true if not set)
+    if (prefs.notificationsEnabled === false) return;
+    if (prefs.streakReminderEnabled === false) return;
 
     // Get last used variant to avoid repeating
     const lastVariantIdx = (profile.lastStreakVariantIdx as number) ?? -1;
@@ -126,13 +132,17 @@ export async function sendFocusCompanion(): Promise<void> {
   const verse = cacheSnap.data()?.focusVerse as { text: string; reference: string } | undefined;
   if (!verse) return;
 
-  // Find users who opted in to Focus Companion
+  // Find users who opted in to Focus Companion and have notifications enabled
   const usersSnap = await db()
     .collection("users")
-    .where("preferences.focusCompanion", "==", true)
+    .where("preferences.notificationsEnabled", "!=", false)
     .get();
 
   const promises = usersSnap.docs.map(async (doc) => {
+    const prefs = (doc.data().preferences ?? {}) as Record<string, unknown>;
+    // Skip if user turned off morning focus companion (default true if not set)
+    if (prefs.morningFocusEnabled === false) return;
+
     const uid = doc.id;
     const variantIdx = Math.floor(Math.random() * FOCUS_VARIANTS.length);
     const _title = FOCUS_VARIANTS[variantIdx]; void _title;

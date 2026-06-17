@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/colors.dart';
@@ -69,6 +71,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
               4 => _AccountStep(
                   onComplete: _completeOnboarding,
                   isLoading: _isLoading,
+                  selectedVersion: _selectedVersion,
+                  selectedGoal: _selectedGoal,
+                  selectedReminder: _selectedReminder,
                 ),
               _ => const SizedBox.shrink(),
             },
@@ -80,6 +85,16 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
 
   Future<void> _completeOnboarding() async {
     setState(() => _isLoading = true);
+    // Save onboarding preferences only if user made selections (new sign-up flow)
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid != null && (_selectedVersion != null || _selectedGoal != null)) {
+      await FirebaseFirestore.instance.collection('users').doc(uid).update({
+        if (_selectedVersion != null) 'preferences.version': _selectedVersion!.name,
+        if (_selectedGoal != null) 'preferences.studyGoal': _selectedGoal!.name,
+        'preferences.reminderTime': _selectedReminder,
+        'onboardingCompleted': true,
+      });
+    }
     // Navigation handled by auth state change listener in router
   }
 }
@@ -404,8 +419,17 @@ class _ReminderCard extends StatelessWidget {
 class _AccountStep extends ConsumerWidget {
   final Future<void> Function() onComplete;
   final bool isLoading;
+  final BibleVersion? selectedVersion;
+  final StudyGoal? selectedGoal;
+  final String? selectedReminder;
 
-  const _AccountStep({required this.onComplete, required this.isLoading});
+  const _AccountStep({
+    required this.onComplete,
+    required this.isLoading,
+    this.selectedVersion,
+    this.selectedGoal,
+    this.selectedReminder,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {

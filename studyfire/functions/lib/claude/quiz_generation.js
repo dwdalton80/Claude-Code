@@ -13,7 +13,7 @@ async function generateQuizBatch(topicTags) {
     // Build batch requests — one per topic tag
     const requests = topicTags.map((tag) => ({
         model: client_1.MODELS.haiku,
-        max_tokens: 1500,
+        max_tokens: 3000,
         messages: [
             {
                 role: "user",
@@ -55,8 +55,8 @@ async function generateQuizBatch(topicTags) {
 function buildQuizPrompt(topicTag) {
     return `You are generating Bible quiz questions for the topic: "${topicTag}".
 
-Generate exactly 5 quiz questions about this topic from a evangelical Christian perspective.
-Mix of types: at least 2 multiple_choice, 1 true_false, 1 fill_blank, 1 passage_matching.
+Generate exactly 10 quiz questions about this topic from a evangelical Christian perspective.
+Mix of types: at least 4 multiple_choice, 2 true_false, 2 fill_blank, 2 passage_matching.
 
 Rules:
 - Ages 16-30 audience

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/colors.dart';
+import '../../core/constants/session_length.dart';
 import '../../core/constants/typography.dart';
 import '../../core/constants/xp_rewards.dart';
 import '../../widgets/common/flame_cta_button.dart';
@@ -12,8 +13,6 @@ import '../../app.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'spark_session_screen.dart';
-
-enum SessionLength { spark, short, deep }
 
 class QuestScreen extends ConsumerStatefulWidget {
   const QuestScreen({super.key});
@@ -30,6 +29,7 @@ class _QuestScreenState extends ConsumerState<QuestScreen> {
   String _passageId = 'rom_8_28';
   int _streak = 0;
   int _dailyXp = 0;
+  String _studyLevel = 'Beginner';
   static const _dailyXpGoal = 100;
 
   @override
@@ -48,14 +48,27 @@ class _QuestScreenState extends ConsumerState<QuestScreen> {
 
   Future<void> _loadTodaysPassage() async {
     final today = DateTime.now().toIso8601String().split('T')[0];
-    // Query sparkcache/{today}/{passageId}/kjv document
-    final snap = await FirebaseFirestore.instance
+
+    // Read manifest to find today's passageId
+    final manifest = await FirebaseFirestore.instance
         .collection('sparkcache')
         .doc(today)
-        .collection('rom_8_28')
-        .doc('kjv')
         .get();
-    // Try to find today's passage by checking known passage IDs
+
+    if (manifest.exists) {
+      final data = manifest.data()!;
+      final pid = data['passageId'] as String?;
+      final reference = data['reference'] as String?;
+      if (pid != null && reference != null && mounted) {
+        setState(() {
+          _passageId = pid;
+          _passage = reference;
+        });
+        return;
+      }
+    }
+
+    // Fallback: check a handful of known passage IDs if manifest missing
     final knownPassages = ['rom_8_28', 'jhn_3_16', 'psa_23_1', 'jer_29_11', 'php_4_13'];
     for (final pid in knownPassages) {
       final doc = await FirebaseFirestore.instance
@@ -65,23 +78,21 @@ class _QuestScreenState extends ConsumerState<QuestScreen> {
           .doc('kjv')
           .get();
       if (doc.exists && mounted) {
-        final ref = pid.split('_');
-        const bookMap = {
-          'gen': 'Genesis', 'exo': 'Exodus', 'psa': 'Psalms', 'pro': 'Proverbs',
-          'mat': 'Matthew', 'mrk': 'Mark', 'luk': 'Luke', 'jhn': 'John',
-          'act': 'Acts', 'rom': 'Romans', '1co': '1 Corinthians', '2co': '2 Corinthians',
-          'gal': 'Galatians', 'eph': 'Ephesians', 'php': 'Philippians', 'col': 'Colossians',
-          'jer': 'Jeremiah', 'isa': 'Isaiah', 'heb': 'Hebrews', 'jas': 'James',
-        };
-        final book = bookMap[ref[0]] ?? ref[0];
-        final chapter = ref.length > 1 ? ref[1] : '1';
-        final verse = ref.length > 2 ? ref[2] : '1';
+        final ref = doc.data()?['reference'] as String? ?? pid.replaceAll('_', ' ');
         setState(() {
           _passageId = pid;
-          _passage = '$book $chapter:$verse';
+          _passage = ref;
         });
         return;
       }
+    }
+  }
+
+  String _formatStudyLevel(String raw) {
+    switch (raw) {
+      case 'growing': return 'Growing';
+      case 'scholar': return 'Scholar';
+      default: return 'Beginner';
     }
   }
 
@@ -102,6 +113,7 @@ class _QuestScreenState extends ConsumerState<QuestScreen> {
           final today = DateTime.now().toIso8601String().split('T')[0];
           final xpDate = profile['xpTodayDate'] as String? ?? '';
           _dailyXp = xpDate == today ? (profile['xpToday'] as int? ?? 0) : 0;
+          _studyLevel = _formatStudyLevel(profile['studyLevel'] as String? ?? 'beginner');
         });
       }
     });
@@ -149,6 +161,7 @@ class _QuestScreenState extends ConsumerState<QuestScreen> {
                   ),
                 Expanded(flex: 8, child: _QuestCard(
                   passage: _passage,
+                  studyLevel: _studyLevel,
                   xpReward: _xpForLength(_sessionLength),
                   sessionLength: _sessionLength,
                   onLengthChanged: (l) => setState(() => _sessionLength = l),
@@ -185,6 +198,7 @@ void _startSession() {
           passageId: _passageId,
           reference: _passage,
           version: 'kjv',
+          sessionLength: _sessionLength,
         ),
       ),
     );
@@ -213,6 +227,7 @@ void _startSession() {
 
 class _QuestCard extends StatelessWidget {
   final String passage;
+  final String studyLevel;
   final int xpReward;
   final SessionLength sessionLength;
   final ValueChanged<SessionLength> onLengthChanged;
@@ -220,6 +235,7 @@ class _QuestCard extends StatelessWidget {
 
   const _QuestCard({
     required this.passage,
+    required this.studyLevel,
     required this.xpReward,
     required this.sessionLength,
     required this.onLengthChanged,
@@ -261,7 +277,7 @@ class _QuestCard extends StatelessWidget {
                     color: AppColors.surface,
                     borderRadius: BorderRadius.circular(20),
                   ),
-                  child: const Text('Beginner', style: AppTypography.labelSmall),
+                  child: Text(studyLevel, style: AppTypography.labelSmall),
                 ),
               ],
             ),

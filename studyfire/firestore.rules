@@ -148,6 +148,10 @@ service cloud.firestore {
         request.auth.uid == resource.data.authorUid ||
         get(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid)).data.role == 'creator'
       );
+      allow delete: if isSignedIn() && (
+        request.auth.uid == resource.data.authorUid ||
+        get(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid)).data.role == 'creator'
+      );
     }
   }
 }

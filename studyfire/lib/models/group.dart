@@ -15,6 +15,8 @@ class Group {
   final int memberCount;
   final DateTime? lastActivity;
   final String? coverImageUrl;
+  final Map<String, dynamic>? pinnedAnnouncement;
+  final List<Map<String, dynamic>> readingPlan;
 
   const Group({
     required this.id,
@@ -28,13 +30,15 @@ class Group {
     required this.memberCount,
     this.lastActivity,
     this.coverImageUrl,
+    this.pinnedAnnouncement,
+    this.readingPlan = const [],
   });
 
   factory Group.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
     return Group(
       id: doc.id,
-      name: data['displayName'] ?? data['name'] ?? 'Member',
+      name: data['displayName'] ?? data['name'] ?? 'Group',
       topic: data['topic'] ?? '',
       description: data['description'],
       endDate: (data['endDate'] as Timestamp?)?.toDate(),
@@ -44,6 +48,35 @@ class Group {
       memberCount: data['memberCount'] ?? 0,
       lastActivity: (data['lastActivity'] as Timestamp?)?.toDate(),
       coverImageUrl: data['coverImageUrl'],
+      pinnedAnnouncement: data['pinnedAnnouncement'] as Map<String, dynamic>?,
+      readingPlan: (data['readingPlan'] as List<dynamic>? ?? [])
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList(),
+    );
+  }
+
+  Group copyWith({
+    String? name,
+    String? topic,
+    String? description,
+    Map<String, dynamic>? pinnedAnnouncement,
+    bool clearAnnouncement = false,
+    List<Map<String, dynamic>>? readingPlan,
+  }) {
+    return Group(
+      id: id,
+      name: name ?? this.name,
+      topic: topic ?? this.topic,
+      description: description ?? this.description,
+      endDate: endDate,
+      creatorUid: creatorUid,
+      createdAt: createdAt,
+      inviteCode: inviteCode,
+      memberCount: memberCount,
+      lastActivity: lastActivity,
+      coverImageUrl: coverImageUrl,
+      pinnedAnnouncement: clearAnnouncement ? null : (pinnedAnnouncement ?? this.pinnedAnnouncement),
+      readingPlan: readingPlan ?? this.readingPlan,
     );
   }
 

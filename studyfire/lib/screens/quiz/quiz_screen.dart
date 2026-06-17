@@ -290,7 +290,6 @@ class _QuizScreenState extends ConsumerState<QuizScreen> {
               xpEarned: _totalXp,
               topicTag: _questions.first.topicTag,
               onDone: () => Navigator.pop(context),
-              onPostToGroup: () {},
             )
           else
             _QuizQuestionView(
@@ -546,7 +545,6 @@ class _QuizResultScreen extends StatelessWidget {
   final int xpEarned;
   final String topicTag;
   final VoidCallback onDone;
-  final VoidCallback onPostToGroup;
 
   const _QuizResultScreen({
     required this.score,
@@ -554,7 +552,6 @@ class _QuizResultScreen extends StatelessWidget {
     required this.xpEarned,
     required this.topicTag,
     required this.onDone,
-    required this.onPostToGroup,
   });
 
   @override
@@ -608,11 +605,6 @@ class _QuizResultScreen extends StatelessWidget {
           Text('+$xpEarned XP', style: AppTypography.xpDisplay),
           const SizedBox(height: 40),
           FlameCTAButton(label: 'Done', onPressed: onDone),
-          const SizedBox(height: 12),
-          OutlinedButton(
-            onPressed: onPostToGroup,
-            child: const Text('Post a question to group'),
-          ),
         ],
       ),
     );

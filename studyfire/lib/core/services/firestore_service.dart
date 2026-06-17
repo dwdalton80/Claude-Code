@@ -11,15 +11,17 @@ class FirestoreService {
   // ── User ─────────────────────────────────────────────────────────────
 
   Stream<UserProfile?> watchProfile(String uid) {
-    return _db.collection('users').doc(uid).snapshots().map((snap) {
-      if (!snap.exists) return null;
-      final data = snap.data()!;
-      final profileData = data['profile'] as Map<String, dynamic>? ?? {};
-      return UserProfile.fromFirestore(
-        // Wrap profile sub-document as a fake DocumentSnapshot
-        _FakeDoc(uid, profileData),
-      );
-    });
+    return _db.collection('users').doc(uid).snapshots()
+        .handleError((_) {}) // swallow permission-denied on sign-out before stream cancels
+        .map((snap) {
+          if (!snap.exists) return null;
+          final data = snap.data()!;
+          final profileData = data['profile'] as Map<String, dynamic>? ?? {};
+          return UserProfile.fromFirestore(
+            // Wrap profile sub-document as a fake DocumentSnapshot
+            _FakeDoc(uid, profileData),
+          );
+        });
   }
 
   Future<UserProfile?> getProfile(String uid) async {
@@ -33,6 +35,26 @@ class FirestoreService {
   Future<void> updateProfile(String uid, Map<String, dynamic> updates) async {
     final prefixed = updates.map((k, v) => MapEntry('profile.$k', v));
     await _db.collection('users').doc(uid).update(prefixed);
+  }
+
+  Future<void> updateDisplayName(String uid, String name) async {
+    // Update the user's profile
+    await _db.collection('users').doc(uid).update({'profile.name': name});
+    // Propagate to all group member docs
+    final groupsSnap = await _db
+        .collection('groups')
+        .where('memberIds', arrayContains: uid)
+        .get();
+    final batch = _db.batch();
+    for (final g in groupsSnap.docs) {
+      batch.update(
+        g.reference.collection('members').doc(uid),
+        {'displayName': name},
+      );
+    }
+    await batch.commit();
+    // Keep Firebase Auth display name in sync
+    await FirebaseAuth.instance.currentUser?.updateDisplayName(name);
   }
 
   Future<void> updatePreferences(
@@ -340,6 +362,13 @@ class FirestoreService {
   }
 
   Future<void> joinGroup(String groupId, String uid, AutoPostSettings settings) async {
+    // Read the user's real name from their Firestore profile
+    final userDoc = await _db.collection('users').doc(uid).get();
+    final profileData = userDoc.data()?['profile'] as Map<String, dynamic>? ?? {};
+    final displayName = (profileData['name'] as String?)?.isNotEmpty == true
+        ? profileData['name'] as String
+        : FirebaseAuth.instance.currentUser?.displayName ?? 'Member';
+
     final groupRef = _db.collection('groups').doc(groupId);
     await _db.runTransaction((tx) async {
       tx.set(groupRef.collection('members').doc(uid), {
@@ -351,6 +380,7 @@ class FirestoreService {
         'streak': 0,
         'badgeCount': 0,
         'versesMemorized': 0,
+        'displayName': displayName,
       });
       tx.update(groupRef, {'memberCount': FieldValue.increment(1)});
     });
@@ -412,14 +442,16 @@ class FirestoreService {
       'lastActivity': now,
       'autoPostSettings': AutoPostSettings.defaults().toMap(),
     });
-    final user = FirebaseAuth.instance.currentUser;
-    final displayName = user?.displayName ?? user?.email?.split('@')[0] ?? 'Member';
-    final streak = 0;
+    final userDoc = await _db.collection('users').doc(uid).get();
+    final profileData = userDoc.data()?['profile'] as Map<String, dynamic>? ?? {};
+    final displayName = (profileData['name'] as String?)?.isNotEmpty == true
+        ? profileData['name'] as String
+        : FirebaseAuth.instance.currentUser?.displayName ?? 'Member';
     await groupRef.collection('members').doc(uid).set({
       'joinedAt': now,
       'role': GroupRole.creator.name,
       'weeklyXp': 0,
-      'currentStreak': streak,
+      'streak': 0,
       'badgeCount': 0,
       'versesMemorized': 0,
       'displayName': displayName,
@@ -435,6 +467,55 @@ class FirestoreService {
     await _db.collection('groups').doc(group.id).update({
       'memberIds': FieldValue.arrayUnion([uid]),
     });
+  }
+
+  Future<void> updateGroupInfo(
+    String groupId, {
+    String? name,
+    String? topic,
+    String? description,
+  }) async {
+    final updates = <String, dynamic>{};
+    if (name != null) updates['name'] = name;
+    if (topic != null) updates['topic'] = topic;
+    if (description != null) updates['description'] = description;
+    if (updates.isNotEmpty) {
+      await _db.collection('groups').doc(groupId).update(updates);
+    }
+  }
+
+  Future<void> pinAnnouncement(String groupId, String text, String uid) async {
+    await _db.collection('groups').doc(groupId).update({
+      'pinnedAnnouncement': {
+        'text': text,
+        'pinnedAt': FieldValue.serverTimestamp(),
+        'pinnedByUid': uid,
+      },
+    });
+  }
+
+  Future<void> unpinAnnouncement(String groupId) async {
+    await _db.collection('groups').doc(groupId).update({
+      'pinnedAnnouncement': FieldValue.delete(),
+    });
+  }
+
+  Future<void> updateReadingPlan(
+    String groupId,
+    List<Map<String, dynamic>> plan,
+  ) async {
+    await _db.collection('groups').doc(groupId).update({'readingPlan': plan});
+  }
+
+  Future<void> removeGroupMember(String groupId, String memberUid) async {
+    final groupRef = _db.collection('groups').doc(groupId);
+    await Future.wait([
+      groupRef.collection('members').doc(memberUid).delete(),
+      groupRef.update({
+        'memberIds': FieldValue.arrayRemove([memberUid]),
+        'memberCount': FieldValue.increment(-1),
+      }),
+    ]);
   }
 
   // Convenience: post a typed message to group feed

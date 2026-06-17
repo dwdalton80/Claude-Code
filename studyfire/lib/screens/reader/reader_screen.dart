@@ -72,6 +72,14 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   final Set<String> _countedChapters = {};
   bool _streakRecorded = false;
 
+  // Compare mode
+  bool _compareMode = false;
+  String _compareVersionA = 'kjv';
+  String _compareVersionB = 'niv';
+  List<BibleVerse> _versesA = [];
+  List<BibleVerse> _versesB = [];
+  bool _loadingCompare = false;
+
   final _scrollController = ScrollController();
   final _db = FirestoreService();
   final _xpService = XpService();
@@ -143,6 +151,21 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
         _streakService.recordActivity(widget.uid).catchError((_) {});
       }
     }
+  }
+
+  Future<void> _loadCompareVerses() async {
+    if (!mounted) return;
+    setState(() => _loadingCompare = true);
+    final results = await Future.wait([
+      _db.getVerses(_compareVersionA, _currentBook, _currentChapter),
+      _db.getVerses(_compareVersionB, _currentBook, _currentChapter),
+    ]);
+    if (!mounted) return;
+    setState(() {
+      _versesA = results[0];
+      _versesB = results[1];
+      _loadingCompare = false;
+    });
   }
 
   Future<void> _loadHighlights() async {
@@ -464,7 +487,28 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                   Expanded(
                     child: Column(
                       children: [
-                      if (_showHint)
+                      if (_compareMode)
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          color: AppColors.warmGold.withOpacity(0.12),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.compare_arrows, size: 16, color: AppColors.warmGold),
+                              const SizedBox(width: 8),
+                              Text(
+                                '${_compareVersionA.toUpperCase()} vs ${_compareVersionB.toUpperCase()}',
+                                style: const TextStyle(fontSize: 12, color: AppColors.warmGold, fontWeight: FontWeight.w600),
+                              ),
+                              const Spacer(),
+                              GestureDetector(
+                                onTap: () => setState(() => _compareMode = false),
+                                child: const Text('Exit', style: TextStyle(fontSize: 12, color: AppColors.warmGold)),
+                              ),
+                            ],
+                          ),
+                        )
+                      else if (_showHint)
                         GestureDetector(
                           onTap: _dismissHint,
                           child: Container(
@@ -486,16 +530,26 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                           ),
                         ),
                       Expanded(
-                        child: _loading
-                            ? const Center(child: CircularProgressIndicator())
-                            : _VerseList(
-                            verses: _verses,
-                            highlights: _highlights,
-                            notes: _notes,
-                            onTap: _onVerseTap,
-                            onLongPress: _onVerseLongPress,
-                            scrollController: _scrollController,
-                          ),
+                        child: _compareMode
+                            ? (_loadingCompare
+                                ? const Center(child: CircularProgressIndicator())
+                                : _CompareVerseList(
+                                    versesA: _versesA,
+                                    versesB: _versesB,
+                                    versionA: _compareVersionA,
+                                    versionB: _compareVersionB,
+                                    scrollController: _scrollController,
+                                  ))
+                            : (_loading
+                                ? const Center(child: CircularProgressIndicator())
+                                : _VerseList(
+                                    verses: _verses,
+                                    highlights: _highlights,
+                                    notes: _notes,
+                                    onTap: _onVerseTap,
+                                    onLongPress: _onVerseLongPress,
+                                    scrollController: _scrollController,
+                                  )),
                       ),
                     ],
                   )),
@@ -546,16 +600,236 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                     Navigator.pop(context);
                   },
                 )),
+            const Divider(color: AppColors.surface),
             ListTile(
-              title: const Text('Compare All 3 🔒', style: AppTypography.bodyLarge),
-              subtitle: Text('Premium', style: AppTypography.bodySmall.copyWith(color: AppColors.warmGold)),
+              leading: const Icon(Icons.compare_arrows, color: AppColors.warmGold),
+              title: const Text('Compare two versions', style: AppTypography.bodyLarge),
               onTap: () {
                 Navigator.pop(context);
+                _showComparePicker();
               },
             ),
           ],
         ),
       ),
+    );
+  }
+
+  void _showComparePicker() {
+    String selA = _compareVersionA;
+    String selB = _compareVersionB;
+    const versions = ['kjv', 'niv', 'csb'];
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.cardDark,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setLocal) => Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Compare Versions', style: AppTypography.labelLarge),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('First', style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary)),
+                        const SizedBox(height: 8),
+                        ...versions.map((v) => GestureDetector(
+                          onTap: () => setLocal(() => selA = v),
+                          child: Container(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
+                            decoration: BoxDecoration(
+                              color: selA == v ? AppColors.warmGold.withOpacity(0.15) : AppColors.surface,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: selA == v ? AppColors.warmGold : Colors.transparent,
+                              ),
+                            ),
+                            child: Text(v.toUpperCase(),
+                              style: AppTypography.labelSmall.copyWith(
+                                color: selA == v ? AppColors.warmGold : AppColors.warmWhite,
+                              )),
+                          ),
+                        )),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  const Icon(Icons.compare_arrows, color: AppColors.textSecondary),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Second', style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary)),
+                        const SizedBox(height: 8),
+                        ...versions.map((v) => GestureDetector(
+                          onTap: () => setLocal(() => selB = v),
+                          child: Container(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
+                            decoration: BoxDecoration(
+                              color: selB == v ? AppColors.warmGold.withOpacity(0.15) : AppColors.surface,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: selB == v ? AppColors.warmGold : Colors.transparent,
+                              ),
+                            ),
+                            child: Text(v.toUpperCase(),
+                              style: AppTypography.labelSmall.copyWith(
+                                color: selB == v ? AppColors.warmGold : AppColors.warmWhite,
+                              )),
+                          ),
+                        )),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: selA == selB ? AppColors.surface : AppColors.warmGold,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  onPressed: selA == selB ? null : () {
+                    Navigator.pop(ctx);
+                    setState(() {
+                      _compareVersionA = selA;
+                      _compareVersionB = selB;
+                      _compareMode = true;
+                    });
+                    _loadCompareVerses();
+                  },
+                  child: Text(
+                    selA == selB ? 'Pick two different versions' : 'Compare ${selA.toUpperCase()} & ${selB.toUpperCase()}',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Compare Verse List ────────────────────────────────────────────────────────
+
+class _CompareVerseList extends StatelessWidget {
+  final List<BibleVerse> versesA;
+  final List<BibleVerse> versesB;
+  final String versionA;
+  final String versionB;
+  final ScrollController scrollController;
+
+  const _CompareVerseList({
+    required this.versesA,
+    required this.versesB,
+    required this.versionA,
+    required this.versionB,
+    required this.scrollController,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final count = versesA.length > versesB.length ? versesA.length : versesB.length;
+    if (count == 0) {
+      return Center(child: Text('No verses found', style: AppTypography.bodyMedium));
+    }
+    return ListView.builder(
+      controller: scrollController,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      itemCount: count,
+      itemBuilder: (_, i) {
+        final a = i < versesA.length ? versesA[i] : null;
+        final b = i < versesB.length ? versesB[i] : null;
+        final verseNum = (a?.verseNum ?? b?.verseNum ?? (i + 1)).toString();
+        return Container(
+          margin: const EdgeInsets.only(bottom: 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Verse number header
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  verseNum,
+                  style: AppTypography.labelSmall.copyWith(color: AppColors.warmGold),
+                ),
+              ),
+              // Version A
+              if (a != null)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.cardDark,
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(10),
+                      topRight: Radius.circular(10),
+                    ),
+                    border: Border(
+                      left: BorderSide(color: AppColors.warmGold.withOpacity(0.6), width: 3),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(versionA.toUpperCase(),
+                        style: AppTypography.labelSmall.copyWith(
+                          color: AppColors.warmGold, fontSize: 10, letterSpacing: 1.2,
+                        )),
+                      const SizedBox(height: 4),
+                      Text(a.text, style: AppTypography.bodyMedium),
+                    ],
+                  ),
+                ),
+              // Version B
+              if (b != null)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: const BorderRadius.only(
+                      bottomLeft: Radius.circular(10),
+                      bottomRight: Radius.circular(10),
+                    ),
+                    border: Border(
+                      left: BorderSide(color: AppColors.textSecondary.withOpacity(0.5), width: 3),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(versionB.toUpperCase(),
+                        style: AppTypography.labelSmall.copyWith(
+                          color: AppColors.textSecondary, fontSize: 10, letterSpacing: 1.2,
+                        )),
+                      const SizedBox(height: 4),
+                      Text(b.text, style: AppTypography.bodyMedium),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
