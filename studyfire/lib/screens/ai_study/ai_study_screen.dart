@@ -10,7 +10,7 @@ import '../../core/constants/xp_rewards.dart';
 import '../../core/services/xp_service.dart';
 import '../../widgets/common/flame_cta_button.dart';
 import '../../widgets/gamification/xp_burst.dart';
-import '../../app.dart';;
+import '../../app.dart';
 
 // Response shape from Cloud Function
 class AiStudyData {
