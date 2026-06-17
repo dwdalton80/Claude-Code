@@ -4,6 +4,7 @@ import 'screens/splash_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'core/theme/app_theme.dart';
 import 'core/constants/colors.dart';
 import 'core/constants/typography.dart';
@@ -77,12 +78,13 @@ final routerProvider = Provider<GoRouter>((ref) {
             builder: (context, state) {
               final user = FirebaseAuth.instance.currentUser;
               final extra = state.extra as Map<String, dynamic>?;
-              return ReaderScreen(
+              return _ReaderWrapper(
                 uid: user?.uid ?? '',
-                book: extra?['book'] as String? ?? 'jhn',
-                chapter: extra?['chapter'] as int? ?? 3,
+                // Null means "no explicit destination — restore last position"
+                book: extra?['book'] as String?,
+                chapter: extra?['chapter'] as int?,
                 startVerse: extra?['startVerse'] as int?,
-                version: extra?['version'] as String? ?? 'kjv',
+                explicitVersion: extra?['version'] as String?,
               );
             },
           ),
@@ -279,6 +281,82 @@ class _ProfileLoadingWrapper extends ConsumerWidget {
   }
 }
 
+
+// ── Reader Wrapper — resolves default Bible version + last reading position ────
+
+class _ReaderWrapper extends ConsumerStatefulWidget {
+  final String uid;
+  final String? book;       // null = restore last position
+  final int? chapter;       // null = restore last position
+  final int? startVerse;
+  final String? explicitVersion;
+
+  const _ReaderWrapper({
+    required this.uid,
+    this.book,
+    this.chapter,
+    this.startVerse,
+    this.explicitVersion,
+  });
+
+  @override
+  ConsumerState<_ReaderWrapper> createState() => _ReaderWrapperState();
+}
+
+class _ReaderWrapperState extends ConsumerState<_ReaderWrapper> {
+  String? _resolvedBook;
+  int? _resolvedChapter;
+  bool _positionLoaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.book != null) {
+      // Explicit destination — no prefs needed
+      _resolvedBook = widget.book;
+      _resolvedChapter = widget.chapter;
+      _positionLoaded = true;
+    } else {
+      _loadLastPosition();
+    }
+  }
+
+  Future<void> _loadLastPosition() async {
+    final prefs = await SharedPreferences.getInstance();
+    final lastBook = prefs.getString('reader_last_book');
+    final lastChapter = prefs.getInt('reader_last_chapter');
+    if (mounted) {
+      setState(() {
+        _resolvedBook = lastBook ?? 'jhn';
+        _resolvedChapter = lastChapter ?? 3;
+        _positionLoaded = true;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_positionLoaded) {
+      return const Scaffold(
+        backgroundColor: AppColors.deepSlate,
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    final profileAsync = ref.watch(currentProfileProvider);
+    final version = widget.explicitVersion
+        ?? profileAsync.valueOrNull?.defaultVersion.name
+        ?? 'kjv';
+
+    return ReaderScreen(
+      uid: widget.uid,
+      book: _resolvedBook!,
+      chapter: _resolvedChapter!,
+      startVerse: widget.startVerse,
+      version: version,
+    );
+  }
+}
 
 class _AuthNotifier extends ChangeNotifier {
   late final StreamSubscription<dynamic> _sub;

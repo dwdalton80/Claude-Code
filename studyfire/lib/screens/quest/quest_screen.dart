@@ -29,8 +29,19 @@ class _QuestScreenState extends ConsumerState<QuestScreen> {
   String _passageId = 'rom_8_28';
   int _streak = 0;
   int _dailyXp = 0;
+  int _totalXp = 0;
   String _studyLevel = 'Beginner';
-  static const _dailyXpGoal = 100;
+
+  /// Daily XP goal scales with level: (next threshold − current threshold) ÷ 30,
+  /// clamped to [50, 300]. Seeker→Disciple gap is 500 → goal 50 (min).
+  int get _dailyXpGoal {
+    final currentLevel = LevelThresholds.forXp(_totalXp);
+    final currentFloor = currentLevel['xp'] as int;
+    final nextThreshold = LevelThresholds.nextThreshold(_totalXp);
+    if (nextThreshold == null) return 300; // max level
+    final gap = nextThreshold - currentFloor;
+    return (gap / 30).round().clamp(50, 300);
+  }
 
   @override
   void initState() {
@@ -109,6 +120,7 @@ class _QuestScreenState extends ConsumerState<QuestScreen> {
         final profile = data['profile'] as Map<String, dynamic>? ?? {};
         setState(() {
           _streak = profile['streak'] as int? ?? 0;
+          _totalXp = profile['xp'] as int? ?? 0;
           // Daily XP: reset if date changed
           final today = DateTime.now().toIso8601String().split('T')[0];
           final xpDate = profile['xpTodayDate'] as String? ?? '';
@@ -372,6 +384,12 @@ class _SessionToggle extends StatelessWidget {
 
   const _SessionToggle({required this.selected, required this.onChanged});
 
+  static const _meta = {
+    SessionLength.spark: ('Spark', '~90 sec', 'One verse + reflection'),
+    SessionLength.short: ('Short', '~5 min', 'Verse + AI questions'),
+    SessionLength.deep: ('Deep', '~10 min', 'Full study + journal'),
+  };
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -379,30 +397,52 @@ class _SessionToggle extends StatelessWidget {
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(12),
       ),
+      padding: const EdgeInsets.all(4),
       child: Row(
         children: SessionLength.values.map((l) {
           final isSelected = l == selected;
-          final label = switch (l) {
-            SessionLength.spark => 'Spark',
-            SessionLength.short => 'Short',
-            SessionLength.deep => 'Deep',
-          };
+          final (label, time, desc) = _meta[l]!;
           return Expanded(
             child: GestureDetector(
               onTap: () => onChanged(l),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(vertical: 10),
+                padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
                 decoration: BoxDecoration(
                   color: isSelected ? AppColors.warmGold : Colors.transparent,
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(8),
                 ),
-                child: Text(
-                  label,
-                  textAlign: TextAlign.center,
-                  style: AppTypography.labelSmall.copyWith(
-                    color: isSelected ? Colors.white : AppColors.textSecondary,
-                  ),
+                child: Column(
+                  children: [
+                    Text(
+                      label,
+                      textAlign: TextAlign.center,
+                      style: AppTypography.labelSmall.copyWith(
+                        color: isSelected ? Colors.white : AppColors.textSecondary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      time,
+                      textAlign: TextAlign.center,
+                      style: AppTypography.labelSmall.copyWith(
+                        fontSize: 10,
+                        color: isSelected ? Colors.white70 : AppColors.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 1),
+                    Text(
+                      desc,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 9,
+                        color: isSelected
+                            ? Colors.white.withOpacity(0.75)
+                            : AppColors.textSecondary.withOpacity(0.6),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),

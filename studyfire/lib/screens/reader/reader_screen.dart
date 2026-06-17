@@ -217,6 +217,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
       _currentChapter,
       1,
     );
+    // Also mirror to SharedPreferences for instant local restore
+    SharedPreferences.getInstance().then((prefs) {
+      prefs.setString('reader_last_book', _currentBook);
+      prefs.setInt('reader_last_chapter', _currentChapter);
+      prefs.setString('reader_last_version', _currentVersion);
+    });
   }
 
   void _onVerseTap(BibleVerse verse) {

@@ -17,6 +17,7 @@ import '../../core/services/group_activity_service.dart';
 import '../../app.dart';
 import 'package:confetti/confetti.dart';
 import 'package:go_router/go_router.dart';
+import 'package:share_plus/share_plus.dart';
 import '../journal/journal_screen.dart';
 
 class SparkSessionScreen extends ConsumerStatefulWidget {
@@ -502,9 +503,37 @@ class _CompletionScreenState extends State<_CompletionScreen> {
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 12),
-                Text(
-                  widget.reference,
-                  style: AppTypography.bodyMedium.copyWith(color: AppColors.warmGold),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      widget.reference,
+                      style: AppTypography.bodyMedium.copyWith(color: AppColors.warmGold),
+                    ),
+                    if (widget.verseText.isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      GestureDetector(
+                        onTap: () {
+                          final text = widget.verseText.isNotEmpty
+                              ? '"${widget.verseText}" — ${widget.reference}\n\nStudied on StudyFire 🔥'
+                              : '${widget.reference} — studied on StudyFire 🔥';
+                          Share.share(text);
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: BoxDecoration(
+                            color: AppColors.warmGold.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Icon(
+                            Icons.ios_share,
+                            size: 16,
+                            color: AppColors.warmGold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
                 const SizedBox(height: 8),
                 Text(
