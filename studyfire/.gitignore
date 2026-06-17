@@ -47,3 +47,4 @@ serviceAccountKey.json
 functions/.env
 serviceAccountKey.json
 scripts/gen_quiz.js
+functions/node_modules/
