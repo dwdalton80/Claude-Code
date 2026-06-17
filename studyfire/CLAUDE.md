@@ -23,7 +23,7 @@ Previous session transcripts are stored at:
 
 ## API Keys & Config
 - API.Bible key: Fk1XmwXtjR-L_mUuV-Rg7
-- Anthropic key: NEEDS ROTATION — was exposed in git (scripts/gen_quiz.js commit)
+- Anthropic key: rotated 2026-06-15 — was exposed in git (scripts/gen_quiz.js commit)
 - RevenueCat project: proj36f4a898, entitlement: "StudyFire Pro"
 - Service account key: ~/Claude-Code/studyfire/serviceAccountKey.json
   - WARNING: Expires frequently — regenerate from Firebase console when node scripts fail
@@ -238,7 +238,7 @@ const raw = (request as any).data ?? (request as any).body?.data ?? request ?? {
 - flutter_local_notifications and printing don't support Swift Package Manager
 
 ### Security
-- Anthropic API key needs rotation (exposed in commit f018196)
+- Anthropic API key rotated 2026-06-15 (was exposed in commit f018196)
 - generateDebrief auth check removed — re-enable before launch
 - getAiStudy premium check — re-enable before launch
 
@@ -252,8 +252,8 @@ const raw = (request as any).data ?? (request as any).body?.data ?? request ?? {
 - [ ] Re-gate Greek/Hebrew Explorer (word_of_day_screen.dart ~line 120)
 
 ### Security
-- [ ] Rotate Anthropic API key
-- [ ] Update functions/.env with new key
+- [x] Rotate Anthropic API key ✅
+- [x] Update functions/.env with new key ✅
 - [ ] Confirm scripts/gen_quiz.js in .gitignore
 
 ### Data
@@ -267,9 +267,18 @@ const raw = (request as any).data ?? (request as any).body?.data ?? request ?? {
 - [ ] Verify focusVerse in dailycache
 
 ### Infrastructure
-- [ ] Upgrade Node.js 20 to 22
-- [ ] Upgrade firebase-functions 4.6.0 to 5.1.0+
-- [ ] Migrate functions.config() to params
+- [x] Upgrade Node.js 20 to 22 ✅
+- [x] Upgrade firebase-functions 4.6.0 to 6.3.2 ✅
+- [x] Migrate functions.config() to params ✅ (already using process.env — nothing to migrate)
+
+### UX Improvements (Backlog)
+- [ ] Session length labels — add time estimates ("~5 min", "~15 min") and descriptions to Spark/Short/Deep picker on Quest screen
+- [ ] Restore last Reader position — _savePosition() exists; add SharedPreferences restore in initState when no explicit book/chapter passed
+- [ ] Daily XP goal should scale with level — _dailyXpGoal is hardcoded at 100 in quest_screen.dart; tie to LevelThresholds
+- [ ] Verse sharing from Spark completion screen — share_plus already used for badges; add share button for verse text + reference
+- [ ] Memory verse discovery UX — add "Add a verse" search/reference picker from profile or journal screen
+- [ ] Reading plans — "30 days through Romans" style structured path; infrastructure (sparkcache, streak, journal) is in place
+- [ ] Group discussion threads — one-level threaded replies on group feed items
 
 ### App Store
 - [ ] Screenshots all device sizes

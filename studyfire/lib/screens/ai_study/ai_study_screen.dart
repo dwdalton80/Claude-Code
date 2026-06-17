@@ -10,6 +10,7 @@ import '../../core/constants/xp_rewards.dart';
 import '../../core/services/xp_service.dart';
 import '../../widgets/common/flame_cta_button.dart';
 import '../../widgets/gamification/xp_burst.dart';
+import '../../app.dart';;
 
 // Response shape from Cloud Function
 class AiStudyData {
@@ -110,12 +111,16 @@ class _AiStudyScreenState extends ConsumerState<AiStudyScreen> {
       final passageId = widget.passageId ??
           widget.reference.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '_');
 
+      // Read the user's study level from their Firestore profile
+      final profileAsync = ref.read(currentProfileProvider);
+      final studyLevel = profileAsync.valueOrNull?.studyLevel.name ?? 'beginner';
+
       final result = await fn.call({
         'passageId': passageId,
         'passageText': widget.passage,
         'reference': widget.reference,
         'version': widget.version,
-        'studyLevel': 'beginner',
+        'studyLevel': studyLevel,
         'studyGoal': 'devotional',
         'topicTagMastery': <String, String>{},
         'recentQuizHistory': <String>[],

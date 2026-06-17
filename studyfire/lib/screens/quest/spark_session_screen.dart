@@ -541,6 +541,34 @@ class _CompletionScreenState extends State<_CompletionScreen> {
                     label: 'Done',
                     onPressed: widget.onDone,
                   ),
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.menu_book_outlined, size: 18),
+                    label: const Text('Read the full chapter'),
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size(double.infinity, 48),
+                      side: BorderSide(color: AppColors.indigoAccent.withOpacity(0.6)),
+                      foregroundColor: AppColors.warmWhite,
+                    ),
+                    onPressed: () {
+                      // passageId format: "rom_8_28" → book="rom", chapter=8
+                      final parts = widget.passageId.split('_');
+                      final book = parts.isNotEmpty ? parts[0] : 'jhn';
+                      final chapter = parts.length >= 2 ? (int.tryParse(parts[1]) ?? 1) : 1;
+                      final verse = parts.length >= 3 ? int.tryParse(parts[2]) : null;
+                      widget.onDone();
+                      Future.microtask(() {
+                        if (context.mounted) {
+                          context.push('/reader', extra: {
+                            'book': book,
+                            'chapter': chapter,
+                            if (verse != null) 'startVerse': verse,
+                            'version': widget.version,
+                          });
+                        }
+                      });
+                    },
+                  ),
                 ] else if (widget.sessionLength == SessionLength.short) ...[
                   FlameCTAButton(
                     label: 'Go Deeper →',

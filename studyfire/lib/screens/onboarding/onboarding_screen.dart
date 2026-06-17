@@ -21,6 +21,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
   int _step = 0;
   BibleVersion? _selectedVersion;
   StudyGoal? _selectedGoal;
+  String? _selectedStudyLevel;
   String? _selectedReminder;
   bool _isLoading = false;
 
@@ -67,12 +68,14 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
               0 => _WelcomeStep(flamePulse: _flamePulse, onStart: _advance),
               1 => _VersionStep(onSelect: (v) { _selectedVersion = v; _advance(); }),
               2 => _GoalStep(onSelect: (g) { _selectedGoal = g; _advance(); }),
-              3 => _ReminderStep(onSelect: (r) { _selectedReminder = r; _advance(); }),
-              4 => _AccountStep(
+              3 => _StudyLevelStep(onSelect: (l) { _selectedStudyLevel = l; _advance(); }),
+              4 => _ReminderStep(onSelect: (r) { _selectedReminder = r; _advance(); }),
+              5 => _AccountStep(
                   onComplete: _completeOnboarding,
                   isLoading: _isLoading,
                   selectedVersion: _selectedVersion,
                   selectedGoal: _selectedGoal,
+                  selectedStudyLevel: _selectedStudyLevel,
                   selectedReminder: _selectedReminder,
                 ),
               _ => const SizedBox.shrink(),
@@ -91,6 +94,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
       await FirebaseFirestore.instance.collection('users').doc(uid).update({
         if (_selectedVersion != null) 'preferences.version': _selectedVersion!.name,
         if (_selectedGoal != null) 'preferences.studyGoal': _selectedGoal!.name,
+        if (_selectedStudyLevel != null) 'profile.studyLevel': _selectedStudyLevel,
         'preferences.reminderTime': _selectedReminder,
         'onboardingCompleted': true,
       });
@@ -185,7 +189,7 @@ class _VersionStep extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const _StepProgress(current: 2, total: 5),
+          const _StepProgress(current: 2, total: 6),
           const SizedBox(height: 40),
           const Text(
             'Which Bible translation\ndo you prefer?',
@@ -270,7 +274,7 @@ class _GoalStep extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const _StepProgress(current: 3, total: 5),
+          const _StepProgress(current: 3, total: 6),
           const SizedBox(height: 40),
           const Text("What's your main goal?", style: AppTypography.displayMedium),
           const SizedBox(height: 32),
@@ -328,7 +332,108 @@ class _GoalCard extends StatelessWidget {
   }
 }
 
-// ── Step 4: Reminder ──────────────────────────────────────────────────────────
+// ── Step 4: Study Level ───────────────────────────────────────────────────────
+
+class _StudyLevelStep extends StatelessWidget {
+  final ValueChanged<String> onSelect;
+
+  const _StudyLevelStep({required this.onSelect});
+
+  static const _levels = [
+    ('beginner', '🌱', 'New to the Bible', 'Simple language, everyday connections'),
+    ('growing', '📖', 'Growing in faith', 'Some context and theology, clearly explained'),
+    ('scholar', '🔬', 'Deep student', 'Original languages, historical context, detailed analysis'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _StepProgress(current: 4, total: 6),
+          const SizedBox(height: 40),
+          const Text('How would you describe\nyour Bible knowledge?', style: AppTypography.displayMedium),
+          const SizedBox(height: 8),
+          Text(
+            'This personalizes how the AI explains passages.',
+            style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary),
+          ),
+          const SizedBox(height: 28),
+          ..._levels.map((l) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: _StudyLevelCard(
+                  emoji: l.$2,
+                  label: l.$3,
+                  subtitle: l.$4,
+                  onTap: () => onSelect(l.$1),
+                ),
+              )),
+          const Spacer(),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: () => onSelect('beginner'),
+              child: const Text('Skip', style: AppTypography.bodySmall),
+            ),
+          ),
+          const SizedBox(height: 16),
+        ],
+      ),
+    );
+  }
+}
+
+class _StudyLevelCard extends StatelessWidget {
+  final String emoji;
+  final String label;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  const _StudyLevelCard({
+    required this.emoji,
+    required this.label,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.surfaceVariant),
+        ),
+        child: Row(
+          children: [
+            Text(emoji, style: const TextStyle(fontSize: 28)),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label, style: AppTypography.labelMedium),
+                  const SizedBox(height: 2),
+                  Text(subtitle, style: AppTypography.bodySmall.copyWith(
+                    color: AppColors.textSecondary,
+                  )),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Step 5: Reminder ──────────────────────────────────────────────────────────
 
 class _ReminderStep extends StatelessWidget {
   final ValueChanged<String?> onSelect;
@@ -349,7 +454,7 @@ class _ReminderStep extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const _StepProgress(current: 4, total: 5),
+          const _StepProgress(current: 5, total: 6),
           const SizedBox(height: 40),
           const Text('When should we\nremind you?', style: AppTypography.displayMedium),
           const SizedBox(height: 32),
@@ -421,6 +526,7 @@ class _AccountStep extends ConsumerWidget {
   final bool isLoading;
   final BibleVersion? selectedVersion;
   final StudyGoal? selectedGoal;
+  final String? selectedStudyLevel;
   final String? selectedReminder;
 
   const _AccountStep({
@@ -428,6 +534,7 @@ class _AccountStep extends ConsumerWidget {
     required this.isLoading,
     this.selectedVersion,
     this.selectedGoal,
+    this.selectedStudyLevel,
     this.selectedReminder,
   });
 
@@ -440,7 +547,7 @@ class _AccountStep extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.center,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const _StepProgress(current: 5, total: 5),
+          const _StepProgress(current: 6, total: 6),
           const Spacer(),
           const Text('Save your progress', style: AppTypography.displayMedium, textAlign: TextAlign.center),
           const SizedBox(height: 8),
