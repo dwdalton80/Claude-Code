@@ -67,6 +67,11 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ── Notes (reader inline notes, top-level collection) ────────────────────
+    match /notes/{uid}/verses/{verseId} {
+      allow read, write: if isOwner(uid);
+    }
+
     // ── Highlights ─────────────────────────────────────────────────────────────
     match /highlights/{uid}/verses/{verseId} {
       allow read, write: if isOwner(uid);
@@ -127,7 +132,21 @@ service cloud.firestore {
           exists(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid));
         allow create: if isSignedIn() &&
           exists(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid));
-        allow update, delete: if isSignedIn() && request.auth.uid == resource.data.authorUid;
+        // Author can update/delete; any member can increment commentCount
+        allow update: if isSignedIn() && (
+          request.auth.uid == resource.data.authorUid ||
+          (exists(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid)) &&
+           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['commentCount']))
+        );
+        allow delete: if isSignedIn() && request.auth.uid == resource.data.authorUid;
+
+        match /replies/{replyId} {
+          allow read: if isSignedIn() &&
+            exists(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid));
+          allow create: if isSignedIn() &&
+            exists(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid));
+          allow update, delete: if isSignedIn() && request.auth.uid == resource.data.authorUid;
+        }
       }
     }
 

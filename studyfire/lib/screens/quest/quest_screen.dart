@@ -311,14 +311,15 @@ class _QuestCard extends StatelessWidget {
               selected: sessionLength,
               onChanged: onLengthChanged,
             ),
-            const SizedBox(height: 24),
-            GestureDetector(
-              onTap: onStart,
-              child: Image.asset(
-                'assets/images/start_quest_button.png',
-                width: double.infinity,
-                height: 180,
-                fit: BoxFit.contain,
+            const SizedBox(height: 16),
+            Flexible(
+              child: GestureDetector(
+                onTap: onStart,
+                child: Image.asset(
+                  'assets/images/start_quest_button.png',
+                  width: double.infinity,
+                  fit: BoxFit.contain,
+                ),
               ),
             ),
           ],
