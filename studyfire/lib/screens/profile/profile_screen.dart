@@ -17,10 +17,12 @@ import '../../core/constants/colors.dart';
 import '../../core/constants/typography.dart';
 import '../../core/constants/xp_rewards.dart';
 import '../../models/user_profile.dart';
+import '../../models/memory_verse.dart';
 import '../../widgets/common/progress_bar.dart';
 import '../../widgets/gamification/xp_burst.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../core/services/auth_service.dart';
+import '../memory_verse/memory_verse_screen.dart';
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
@@ -90,6 +92,10 @@ class ProfileScreen extends ConsumerWidget {
           const SliverToBoxAdapter(child: _SectionDivider()),
           SliverToBoxAdapter(
             child: _StudyStats(),
+          ),
+          const SliverToBoxAdapter(child: _SectionDivider()),
+          SliverToBoxAdapter(
+            child: _VerseVaultSection(uid: FirebaseAuth.instance.currentUser?.uid ?? ''),
           ),
           const SliverToBoxAdapter(child: SizedBox(height: 80)),
         ],
@@ -841,6 +847,354 @@ class _FocusCompanionToggleState extends State<_FocusCompanionToggle> {
           'preferences': {'focusCompanion': val}
         }, SetOptions(merge: true));
       },
+    );
+  }
+}
+
+// ── Verse Vault Section ────────────────────────────────────────────────────────
+
+class _VerseVaultSection extends StatelessWidget {
+  final String uid;
+  const _VerseVaultSection({required this.uid});
+
+  @override
+  Widget build(BuildContext context) {
+    if (uid.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Text('Verse Vault', style: AppTypography.labelLarge),
+              const Spacer(),
+              IconButton(
+                onPressed: () => _showAddSheet(context),
+                icon: const Icon(Icons.add_circle_outline, color: AppColors.warmGold),
+                tooltip: 'Add a verse',
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          StreamBuilder<List<MemoryVerse>>(
+            stream: FirestoreService().watchMemoryVerses(uid),
+            builder: (context, snap) {
+              if (snap.connectionState == ConnectionState.waiting) {
+                return const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                );
+              }
+              final verses = snap.data ?? [];
+              if (verses.isEmpty) {
+                return GestureDetector(
+                  onTap: () => _showAddSheet(context),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: AppColors.cardDark,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: AppColors.warmGold.withOpacity(0.3),
+                        strokeAlign: BorderSide.strokeAlignInside,
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        const Text('📖', style: TextStyle(fontSize: 28)),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Start your Verse Vault',
+                          style: AppTypography.labelSmall.copyWith(
+                            color: AppColors.warmGold,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Tap + to add a verse to memorize',
+                          style: AppTypography.labelSmall.copyWith(
+                            color: AppColors.textSecondary,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }
+              return Column(
+                children: verses.map((v) => _VaultVerseRow(
+                  verse: v,
+                  onTap: () => Navigator.of(context, rootNavigator: true).push(
+                    MaterialPageRoute(
+                      builder: (_) => MemoryVerseScreen(verse: v, uid: uid),
+                    ),
+                  ),
+                )).toList(),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAddSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.cardDark,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => _AddVerseSheet(uid: uid),
+    );
+  }
+}
+
+class _VaultVerseRow extends StatelessWidget {
+  final MemoryVerse verse;
+  final VoidCallback onTap;
+
+  const _VaultVerseRow({required this.verse, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final stageLabel = _stageLabel(verse.currentStage);
+    final stageColor = verse.mastered ? const Color(0xFF4CAF50) : AppColors.warmGold;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: AppColors.cardDark,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: AppColors.surface),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    verse.reference,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    verse.text.length > 60
+                        ? '${verse.text.substring(0, 60)}…'
+                        : verse.text,
+                    style: const TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 11,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: stageColor.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: stageColor.withOpacity(0.4)),
+              ),
+              child: Text(
+                stageLabel,
+                style: TextStyle(fontSize: 10, color: stageColor, fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _stageLabel(MemoryVerseStage stage) => switch (stage) {
+    MemoryVerseStage.stage1 => 'Learning',
+    MemoryVerseStage.stage2 => 'Practicing',
+    MemoryVerseStage.stage3 => 'Familiar',
+    MemoryVerseStage.stage4 => 'Strong',
+    MemoryVerseStage.stage5 => 'Mastered',
+  };
+}
+
+// ── Add Verse Bottom Sheet ─────────────────────────────────────────────────────
+
+class _AddVerseSheet extends StatefulWidget {
+  final String uid;
+  const _AddVerseSheet({required this.uid});
+
+  @override
+  State<_AddVerseSheet> createState() => _AddVerseSheetState();
+}
+
+class _AddVerseSheetState extends State<_AddVerseSheet> {
+  final _controller = TextEditingController();
+  bool _loading = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final input = _controller.text.trim();
+    if (input.isEmpty) return;
+
+    setState(() { _loading = true; _error = null; });
+
+    try {
+      final db = FirestoreService();
+      final bibleVerse = await db.getVerse('kjv', input);
+
+      if (bibleVerse == null) {
+        if (mounted) setState(() {
+          _error = 'Verse not found. Try "Book Chapter:Verse" (e.g. John 3:16)';
+          _loading = false;
+        });
+        return;
+      }
+
+      // Auto-generate Firestore doc ID
+      final docRef = FirebaseFirestore.instance
+          .collection('memoryVerses')
+          .doc(widget.uid)
+          .collection('verses')
+          .doc();
+
+      final verse = MemoryVerse(
+        id: docRef.id,
+        reference: bibleVerse.reference,
+        text: bibleVerse.text,
+        currentStage: MemoryVerseStage.stage1,
+        mastered: false,
+        attemptHistory: const [],
+        easeFactor: 250,
+        interval: 1,
+        repetitions: 0,
+        nextReviewDate: DateTime.now().add(const Duration(days: 1)),
+      );
+
+      await docRef.set({
+        ...verse.toFirestore(),
+        'addedAt': FieldValue.serverTimestamp(),
+      });
+
+      if (mounted) Navigator.of(context).pop();
+    } catch (e) {
+      if (mounted) setState(() {
+        _error = 'Something went wrong. Please try again.';
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        24, 24, 24, MediaQuery.of(context).viewInsets.bottom + 32,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Text(
+                'Add a Verse to Memorize',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const Spacer(),
+              IconButton(
+                onPressed: () => Navigator.of(context).pop(),
+                icon: const Icon(Icons.close, color: AppColors.textSecondary, size: 20),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Enter a reference like "John 3:16" or "Romans 8:28"',
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _controller,
+            autofocus: true,
+            style: const TextStyle(color: Colors.white),
+            decoration: InputDecoration(
+              hintText: 'e.g. Philippians 4:13',
+              hintStyle: const TextStyle(color: AppColors.textSecondary),
+              filled: true,
+              fillColor: AppColors.surface,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide.none,
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: AppColors.warmGold, width: 1.5),
+              ),
+            ),
+            onSubmitted: (_) => _submit(),
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              _error!,
+              style: const TextStyle(color: Colors.redAccent, fontSize: 12),
+            ),
+          ],
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _loading ? null : _submit,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.warmGold,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              child: _loading
+                  ? const SizedBox(
+                      width: 20, height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white,
+                      ),
+                    )
+                  : const Text('Add to Vault', style: TextStyle(fontWeight: FontWeight.w700)),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
