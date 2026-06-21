@@ -127,6 +127,20 @@ service cloud.firestore {
           get(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid)).data.role == 'creator';
       }
 
+      match /prayers/{prayerId} {
+        allow read: if isSignedIn() &&
+          exists(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid));
+        allow create: if isSignedIn() &&
+          exists(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid));
+        // Author can mark answered; any member can toggle prayedBy/prayedCount
+        allow update: if isSignedIn() && (
+          request.auth.uid == resource.data.authorUid ||
+          (exists(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid)) &&
+           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['prayedBy', 'prayedCount']))
+        );
+        allow delete: if isSignedIn() && request.auth.uid == resource.data.authorUid;
+      }
+
       match /feed/{feedItemId} {
         allow read: if isSignedIn() &&
           exists(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid));

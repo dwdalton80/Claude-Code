@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -793,41 +795,87 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
           builder: (_) => DraggableScrollableSheet(
             expand: false,
             initialChildSize: 0.7,
-            builder: (_, ctrl) => SingleChildScrollView(
-              controller: ctrl,
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('✨ AI Debrief', style: AppTypography.labelLarge.copyWith(color: AppColors.warmGold)),
-                  const SizedBox(height: 16),
-                  if (data['bigIdea'] != null) ...[
-                    Text('Big Idea', style: AppTypography.labelSmall.copyWith(color: AppColors.textSecondary)),
-                    const SizedBox(height: 4),
-                    Text(data['bigIdea'] as String, style: AppTypography.bodyLarge),
-                    const SizedBox(height: 16),
-                  ],
-                  if (data['applicationPoints'] != null && (data['applicationPoints'] as List).isNotEmpty) ...[
-                    Text('Apply This Week', style: AppTypography.labelSmall.copyWith(color: AppColors.textSecondary)),
-                    const SizedBox(height: 4),
-                    ...(data['applicationPoints'] as List).map((p) {
-                      final text = p is Map ? (p['text'] as String? ?? '') : (p as String? ?? '');
-                      if (text.isEmpty) return const SizedBox.shrink();
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('• ', style: TextStyle(color: AppColors.warmGold)),
-                            Expanded(child: Text(text, style: AppTypography.bodyMedium)),
-                          ],
+            builder: (_, ctrl) {
+              // Build plain text for copy/share
+              final buf = StringBuffer();
+              buf.writeln('✨ AI Debrief — ${_titleCtrl.text.trim()}');
+              buf.writeln();
+              if (data['bigIdea'] != null) {
+                buf.writeln('Big Idea');
+                buf.writeln(data['bigIdea'] as String);
+                buf.writeln();
+              }
+              final points = data['applicationPoints'] as List? ?? [];
+              if (points.isNotEmpty) {
+                buf.writeln('Apply This Week');
+                for (final p in points) {
+                  final t = p is Map ? (p['text'] as String? ?? '') : (p as String? ?? '');
+                  if (t.isNotEmpty) buf.writeln('• $t');
+                }
+                buf.writeln();
+              }
+              buf.write('— StudyFire · Based on Theological Christian Values');
+              final plainText = buf.toString();
+
+              return SingleChildScrollView(
+                controller: ctrl,
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text('✨ AI Debrief', style: AppTypography.labelLarge.copyWith(color: AppColors.warmGold)),
+                        const Spacer(),
+                        IconButton(
+                          icon: const Icon(Icons.copy_rounded, size: 20, color: AppColors.textSecondary),
+                          onPressed: () {
+                            Clipboard.setData(ClipboardData(text: plainText));
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Copied to clipboard'), duration: Duration(seconds: 2)),
+                            );
+                          },
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
                         ),
-                      );
-                    }),
+                        const SizedBox(width: 16),
+                        IconButton(
+                          icon: const Icon(Icons.share_rounded, size: 20, color: AppColors.textSecondary),
+                          onPressed: () => Share.share(plainText),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    if (data['bigIdea'] != null) ...[
+                      Text('Big Idea', style: AppTypography.labelSmall.copyWith(color: AppColors.textSecondary)),
+                      const SizedBox(height: 4),
+                      Text(data['bigIdea'] as String, style: AppTypography.bodyLarge),
+                      const SizedBox(height: 16),
+                    ],
+                    if (points.isNotEmpty) ...[
+                      Text('Apply This Week', style: AppTypography.labelSmall.copyWith(color: AppColors.textSecondary)),
+                      const SizedBox(height: 4),
+                      ...points.map((p) {
+                        final text = p is Map ? (p['text'] as String? ?? '') : (p as String? ?? '');
+                        if (text.isEmpty) return const SizedBox.shrink();
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('• ', style: TextStyle(color: AppColors.warmGold)),
+                              Expanded(child: Text(text, style: AppTypography.bodyMedium)),
+                            ],
+                          ),
+                        );
+                      }),
+                    ],
                   ],
-                ],
-              ),
-            ),
+                ),
+              );
+            },
           ),
         );
       }

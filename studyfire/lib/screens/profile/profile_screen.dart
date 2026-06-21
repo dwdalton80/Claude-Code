@@ -1177,74 +1177,61 @@ class _VaultVerseRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final stageLabel = _stageLabel(verse.currentStage);
-    final stageColor = verse.mastered ? const Color(0xFF4CAF50) : AppColors.warmGold;
+    final mastered = verse.mastered || verse.currentStage == MemoryVerseStage.stage5;
+    final filledBars = verse.currentStage.index + 1;
 
     return GestureDetector(
       onTap: onTap,
       child: Container(
         margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: AppColors.cardDark,
           borderRadius: BorderRadius.circular(10),
           border: Border.all(color: AppColors.surface),
         ),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    verse.reference,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 14,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    verse.text.length > 60
-                        ? '${verse.text.substring(0, 60)}…'
-                        : verse.text,
-                    style: const TextStyle(
-                      color: AppColors.textSecondary,
-                      fontSize: 11,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
+            Text(
+              verse.reference,
+              style: AppTypography.labelSmall.copyWith(color: AppColors.warmGold),
             ),
-            const SizedBox(width: 10),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: stageColor.withOpacity(0.15),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: stageColor.withOpacity(0.4)),
-              ),
-              child: Text(
-                stageLabel,
-                style: TextStyle(fontSize: 10, color: stageColor, fontWeight: FontWeight.w600),
-              ),
+            const SizedBox(height: 4),
+            Text(
+              verse.text,
+              style: AppTypography.bodySmall.copyWith(color: AppColors.warmWhite.withOpacity(0.85)),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                ...List.generate(5, (s) => Container(
+                  width: 22, height: 5,
+                  margin: const EdgeInsets.only(right: 4),
+                  decoration: BoxDecoration(
+                    color: s < filledBars ? AppColors.warmGold : AppColors.surface,
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                )),
+                const SizedBox(width: 8),
+                Text(
+                  mastered ? '✅ Mastered' : 'Stage ${verse.currentStage.index + 1}/5',
+                  style: AppTypography.bodySmall.copyWith(
+                    color: mastered ? const Color(0xFF4CAF50) : AppColors.textSecondary,
+                    fontSize: 11,
+                  ),
+                ),
+                const Spacer(),
+                const Icon(Icons.chevron_right, size: 14, color: AppColors.textSecondary),
+              ],
             ),
           ],
         ),
       ),
     );
   }
-
-  String _stageLabel(MemoryVerseStage stage) => switch (stage) {
-    MemoryVerseStage.stage1 => 'Learning',
-    MemoryVerseStage.stage2 => 'Practicing',
-    MemoryVerseStage.stage3 => 'Familiar',
-    MemoryVerseStage.stage4 => 'Strong',
-    MemoryVerseStage.stage5 => 'Mastered',
-  };
 }
 
 // ── Add Verse Bottom Sheet ─────────────────────────────────────────────────────

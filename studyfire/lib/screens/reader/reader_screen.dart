@@ -2862,10 +2862,66 @@ class _AiQuestionPickerSheetState extends State<_AiQuestionPickerSheet> {
     );
   }
 
+  Future<void> _askBibleSays() async {
+    final ctrl = TextEditingController();
+    final topic = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: AppColors.cardDark,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(
+          left: 20, right: 20, top: 20,
+          bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 36, height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)),
+              ),
+            ),
+            Text('What does the Bible say about…', style: AppTypography.labelLarge),
+            const SizedBox(height: 12),
+            TextField(
+              controller: ctrl,
+              autofocus: true,
+              style: AppTypography.bodyMedium.copyWith(color: AppColors.warmWhite),
+              decoration: InputDecoration(
+                hintText: 'e.g. anxiety, forgiveness, marriage',
+                hintStyle: TextStyle(color: AppColors.textSecondary),
+                filled: true,
+                fillColor: AppColors.surface,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.send_rounded, color: AppColors.warmGold, size: 20),
+                  onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+                ),
+              ),
+              onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+              textInputAction: TextInputAction.go,
+            ),
+          ],
+        ),
+      ),
+    );
+    if (topic == null || topic.isEmpty) return;
+    _send('What does the Bible say about $topic?');
+  }
+
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
-    return Padding(
+    return SingleChildScrollView(
       padding: EdgeInsets.fromLTRB(20, 16, 20, bottomInset + 16),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -2943,6 +2999,28 @@ class _AiQuestionPickerSheetState extends State<_AiQuestionPickerSheet> {
                   ),
                 ),
               )),
+              GestureDetector(
+                onTap: _askBibleSays,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: const Color(0xFFB39DDB).withOpacity(0.6)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'What does the Bible say about…',
+                        style: AppTypography.bodySmall.copyWith(color: const Color(0xFFD1C4E9)),
+                      ),
+                      const SizedBox(width: 4),
+                      const Icon(Icons.north_east, size: 12, color: Color(0xFFD1C4E9)),
+                    ],
+                  ),
+                ),
+              ),
               GestureDetector(
                 onTap: _sendWordStudy,
                 child: Container(
@@ -3401,7 +3479,7 @@ class _AskAiSheetState extends State<_AskAiSheet> {
   }
 
   Widget _buildSuggestions() {
-    return Padding(
+    return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

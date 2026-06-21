@@ -332,7 +332,6 @@ class FirestoreService {
         .collection('memoryVerses')
         .doc(uid)
         .collection('verses')
-        .orderBy('addedAt', descending: true)
         .snapshots()
         .map((s) => s.docs.map(MemoryVerse.fromFirestore).toList());
   }
@@ -459,6 +458,54 @@ class FirestoreService {
         .collection('members')
         .get();
     return snap.docs.map(GroupMember.fromFirestore).toList();
+  }
+
+  // ── Prayer Requests ──────────────────────────────────────────────────────
+
+  Stream<List<PrayerRequest>> watchPrayerRequests(String groupId) {
+    return _db
+        .collection('groups')
+        .doc(groupId)
+        .collection('prayers')
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map((s) => s.docs.map(PrayerRequest.fromFirestore).toList());
+  }
+
+  Future<void> addPrayerRequest(String groupId, PrayerRequest prayer) async {
+    await _db
+        .collection('groups')
+        .doc(groupId)
+        .collection('prayers')
+        .doc(prayer.id)
+        .set(prayer.toFirestore());
+  }
+
+  Future<void> togglePraying(String groupId, String prayerId, String uid, bool currentlyPraying) async {
+    final ref = _db.collection('groups').doc(groupId).collection('prayers').doc(prayerId);
+    if (currentlyPraying) {
+      await ref.update({
+        'prayedBy': FieldValue.arrayRemove([uid]),
+        'prayedCount': FieldValue.increment(-1),
+      });
+    } else {
+      await ref.update({
+        'prayedBy': FieldValue.arrayUnion([uid]),
+        'prayedCount': FieldValue.increment(1),
+      });
+    }
+  }
+
+  Future<void> markPrayerAnswered(String groupId, String prayerId) async {
+    await _db
+        .collection('groups')
+        .doc(groupId)
+        .collection('prayers')
+        .doc(prayerId)
+        .update({
+          'answered': true,
+          'answeredAt': FieldValue.serverTimestamp(),
+        });
   }
 
   // Convenience: create group with just a name

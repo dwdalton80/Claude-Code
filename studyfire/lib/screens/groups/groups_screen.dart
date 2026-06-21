@@ -363,7 +363,7 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 4, vsync: this);
+    _tabs = TabController(length: 5, vsync: this);
   }
 
   @override
@@ -452,9 +452,12 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
           indicatorColor: AppColors.warmGold,
           labelStyle: AppTypography.labelSmall,
           unselectedLabelColor: AppColors.textSecondary,
+          isScrollable: true,
+          tabAlignment: TabAlignment.start,
           tabs: const [
             Tab(text: 'Feed'),
             Tab(text: 'Questions'),
+            Tab(text: 'Prayer 🙏'),
             Tab(text: 'Leaderboard'),
             Tab(text: 'Members'),
           ],
@@ -467,17 +470,35 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
               onPinAnnouncement: isCreator ? () => _showPinAnnouncementSheet(context, group) : null,
               onUnpinAnnouncement: isCreator ? () => _removePinnedAnnouncement(group) : null),
           _QuestionsTab(group: group, uid: widget.uid),
+          _PrayerTab(group: group, uid: widget.uid),
           _LeaderboardTab(group: group),
           _MembersTab(group: group, currentUid: widget.uid,
               onRemoveMember: isCreator ? (memberUid) => _confirmRemoveMember(context, group, memberUid) : null),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _postQuestion(context),
-        backgroundColor: AppColors.warmGold,
-        foregroundColor: AppColors.deepSlate,
-        icon: const Icon(Icons.add_comment_outlined),
-        label: const Text('Ask group'),
+      floatingActionButton: ListenableBuilder(
+        listenable: _tabs,
+        builder: (_, __) {
+          if (_tabs.index == 0 || _tabs.index == 3 || _tabs.index == 4) {
+            return const SizedBox.shrink();
+          }
+          if (_tabs.index == 2) {
+            return FloatingActionButton.extended(
+              onPressed: () => _showAddPrayer(context, group),
+              backgroundColor: AppColors.warmGold,
+              foregroundColor: AppColors.deepSlate,
+              icon: const Icon(Icons.add),
+              label: const Text('Add prayer'),
+            );
+          }
+          return FloatingActionButton.extended(
+            onPressed: () => _postQuestion(context),
+            backgroundColor: AppColors.warmGold,
+            foregroundColor: AppColors.deepSlate,
+            icon: const Icon(Icons.add_comment_outlined),
+            label: const Text('Ask group'),
+          );
+        },
       ),
     );
   }
@@ -864,6 +885,417 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
       builder: (_) => _PostQuestionSheet(
         groupId: widget.group.id,
         uid: widget.uid,
+      ),
+    );
+  }
+
+  void _showAddPrayer(BuildContext context, Group group) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.cardDark,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => _AddPrayerSheet(groupId: group.id, uid: widget.uid),
+    );
+  }
+}
+
+// ── Prayer Tab ────────────────────────────────────────────────────────────────
+
+class _PrayerTab extends StatefulWidget {
+  final Group group;
+  final String uid;
+  const _PrayerTab({required this.group, required this.uid});
+
+  @override
+  State<_PrayerTab> createState() => _PrayerTabState();
+}
+
+class _PrayerTabState extends State<_PrayerTab> {
+  bool _showAnswered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        // Filter toggle
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+          child: Row(
+            children: [
+              _FilterChip(
+                label: 'Active',
+                selected: !_showAnswered,
+                onTap: () => setState(() => _showAnswered = false),
+              ),
+              const SizedBox(width: 8),
+              _FilterChip(
+                label: '✅ Answered',
+                selected: _showAnswered,
+                onTap: () => setState(() => _showAnswered = true),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: StreamBuilder<List<PrayerRequest>>(
+            stream: FirestoreService().watchPrayerRequests(widget.group.id),
+            builder: (context, snap) {
+              if (snap.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator(color: AppColors.warmGold));
+              }
+              final all = snap.data ?? [];
+              final prayers = all.where((p) => p.answered == _showAnswered).toList();
+              if (prayers.isEmpty) {
+                return Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(32),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text('🙏', style: TextStyle(fontSize: 48)),
+                        const SizedBox(height: 16),
+                        Text(
+                          _showAnswered ? 'No answered prayers yet' : 'No prayer requests yet',
+                          style: AppTypography.bodyLarge,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          _showAnswered
+                              ? 'Mark requests as answered when God moves!'
+                              : 'Share what\'s on your heart with your group.',
+                          style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }
+              return ListView.separated(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+                itemCount: prayers.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 10),
+                itemBuilder: (_, i) => _PrayerCard(
+                  prayer: prayers[i],
+                  groupId: widget.group.id,
+                  uid: widget.uid,
+                  isAuthor: prayers[i].authorUid == widget.uid,
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _FilterChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  const _FilterChip({required this.label, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.warmGold : AppColors.surface,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(
+          label,
+          style: AppTypography.labelSmall.copyWith(
+            color: selected ? AppColors.deepSlate : AppColors.textSecondary,
+            fontSize: 12,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PrayerCard extends StatelessWidget {
+  final PrayerRequest prayer;
+  final String groupId;
+  final String uid;
+  final bool isAuthor;
+  const _PrayerCard({
+    required this.prayer,
+    required this.groupId,
+    required this.uid,
+    required this.isAuthor,
+  });
+
+  String _timeAgo(DateTime dt) {
+    final diff = DateTime.now().difference(dt);
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    return '${diff.inDays}d ago';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isPraying = prayer.prayedBy.contains(uid);
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.cardDark,
+        borderRadius: BorderRadius.circular(12),
+        border: prayer.answered
+            ? Border.all(color: const Color(0xFF4CAF50).withOpacity(0.4))
+            : null,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 14,
+                backgroundColor: AppColors.indigoAccent.withOpacity(0.3),
+                backgroundImage: prayer.authorAvatar != null
+                    ? NetworkImage(prayer.authorAvatar!)
+                    : null,
+                child: prayer.authorAvatar == null
+                    ? Text(
+                        prayer.authorName.isNotEmpty ? prayer.authorName[0].toUpperCase() : '?',
+                        style: const TextStyle(fontSize: 12, color: AppColors.warmWhite),
+                      )
+                    : null,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  prayer.authorName,
+                  style: AppTypography.labelSmall.copyWith(color: AppColors.warmWhite),
+                ),
+              ),
+              if (prayer.answered)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF4CAF50).withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFF4CAF50).withOpacity(0.4)),
+                  ),
+                  child: const Text('✅ Answered', style: TextStyle(fontSize: 10, color: Color(0xFF4CAF50))),
+                ),
+              const SizedBox(width: 8),
+              Text(
+                _timeAgo(prayer.createdAt),
+                style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary, fontSize: 11),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          // Prayer text
+          Text(
+            prayer.text,
+            style: AppTypography.bodyMedium.copyWith(color: AppColors.warmWhite.withOpacity(0.9)),
+          ),
+          const SizedBox(height: 12),
+          // Footer actions
+          Row(
+            children: [
+              GestureDetector(
+                onTap: () => FirestoreService().togglePraying(groupId, prayer.id, uid, isPraying),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: isPraying
+                        ? AppColors.warmGold.withOpacity(0.15)
+                        : AppColors.surface,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: isPraying
+                          ? AppColors.warmGold.withOpacity(0.5)
+                          : Colors.white12,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '🙏',
+                        style: TextStyle(fontSize: isPraying ? 14 : 13),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        isPraying ? 'Praying' : 'Pray',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isPraying ? AppColors.warmGold : AppColors.textSecondary,
+                          fontWeight: isPraying ? FontWeight.w600 : FontWeight.normal,
+                        ),
+                      ),
+                      if (prayer.prayedCount > 0) ...[
+                        const SizedBox(width: 4),
+                        Text(
+                          '· ${prayer.prayedCount}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: isPraying ? AppColors.warmGold : AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              const Spacer(),
+              if (isAuthor && !prayer.answered)
+                TextButton(
+                  onPressed: () async {
+                    final confirm = await showDialog<bool>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        backgroundColor: AppColors.cardDark,
+                        title: const Text('Mark as Answered?'),
+                        content: const Text('Praise God! Share this answered prayer with your group.'),
+                        actions: [
+                          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx, true),
+                            child: const Text('✅ Mark Answered', style: TextStyle(color: Color(0xFF4CAF50))),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (confirm == true) {
+                      await FirestoreService().markPrayerAnswered(groupId, prayer.id);
+                    }
+                  },
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    minimumSize: Size.zero,
+                  ),
+                  child: Text(
+                    'Mark Answered',
+                    style: AppTypography.bodySmall.copyWith(color: const Color(0xFF4CAF50), fontSize: 12),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AddPrayerSheet extends StatefulWidget {
+  final String groupId;
+  final String uid;
+  const _AddPrayerSheet({required this.groupId, required this.uid});
+
+  @override
+  State<_AddPrayerSheet> createState() => _AddPrayerSheetState();
+}
+
+class _AddPrayerSheetState extends State<_AddPrayerSheet> {
+  final _ctrl = TextEditingController();
+  bool _saving = false;
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final text = _ctrl.text.trim();
+    if (text.isEmpty) return;
+    setState(() => _saving = true);
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      final docRef = FirebaseFirestore.instance
+          .collection('groups')
+          .doc(widget.groupId)
+          .collection('prayers')
+          .doc();
+      await docRef.set({
+        'authorUid': widget.uid,
+        'authorName': user?.displayName ?? user?.email?.split('@')[0] ?? 'Member',
+        'authorAvatar': user?.photoURL,
+        'text': text,
+        'answered': false,
+        'answeredAt': null,
+        'createdAt': FieldValue.serverTimestamp(),
+        'prayedCount': 0,
+        'prayedBy': [],
+      });
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _saving = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to share: $e')),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 20, right: 20, top: 20,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Text('🙏', style: TextStyle(fontSize: 20)),
+              const SizedBox(width: 8),
+              Text('Share a Prayer Request', style: AppTypography.labelLarge),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Your group will be praying with you.',
+            style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _ctrl,
+            autofocus: true,
+            maxLines: 4,
+            maxLength: 500,
+            style: AppTypography.bodyMedium.copyWith(color: AppColors.warmWhite),
+            decoration: InputDecoration(
+              hintText: 'What would you like prayer for?',
+              hintStyle: AppTypography.bodyMedium.copyWith(color: AppColors.textSecondary),
+              filled: true,
+              fillColor: AppColors.surface,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none,
+              ),
+              counterStyle: TextStyle(color: AppColors.textSecondary),
+            ),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: FlameCTAButton(
+              label: _saving ? 'Sharing...' : 'Share Request',
+              onPressed: _saving ? null : _submit,
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -227,6 +227,60 @@ class FeedItem {
       };
 }
 
+class PrayerRequest {
+  final String id;
+  final String authorUid;
+  final String authorName;
+  final String? authorAvatar;
+  final String text;
+  final bool answered;
+  final DateTime? answeredAt;
+  final DateTime createdAt;
+  final int prayedCount;
+  final List<String> prayedBy;
+
+  const PrayerRequest({
+    required this.id,
+    required this.authorUid,
+    required this.authorName,
+    this.authorAvatar,
+    required this.text,
+    required this.answered,
+    this.answeredAt,
+    required this.createdAt,
+    required this.prayedCount,
+    required this.prayedBy,
+  });
+
+  factory PrayerRequest.fromFirestore(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>;
+    return PrayerRequest(
+      id: doc.id,
+      authorUid: data['authorUid'] ?? '',
+      authorName: data['authorName'] ?? '',
+      authorAvatar: data['authorAvatar'],
+      text: data['text'] ?? '',
+      answered: data['answered'] ?? false,
+      answeredAt: (data['answeredAt'] as Timestamp?)?.toDate(),
+      createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      prayedCount: data['prayedCount'] ?? 0,
+      prayedBy: List<String>.from(data['prayedBy'] ?? []),
+    );
+  }
+
+  Map<String, dynamic> toFirestore() => {
+        'authorUid': authorUid,
+        'authorName': authorName,
+        'authorAvatar': authorAvatar,
+        'text': text,
+        'answered': answered,
+        'answeredAt': answeredAt != null ? Timestamp.fromDate(answeredAt!) : null,
+        'createdAt': Timestamp.fromDate(createdAt),
+        'prayedCount': prayedCount,
+        'prayedBy': prayedBy,
+      };
+}
+
 class GroupQuestion {
   final String id;
   final String authorUid;

@@ -888,13 +888,17 @@ export const searchVerses = functions
       throw new functions.https.HttpsError("invalid-argument", "Query must be at least 3 characters");
     }
 
+    // Use document ID ordering to restrict collectionGroup to just this version's path.
+    // startAt/endAt on __name__ lets Firestore pre-filter without scanning other versions.
     const pathPrefix = `bible/${version}/`;
+    const pathEnd = `bible/${version}/`;
 
-    // Fetch up to 5 000 verse documents across ALL nested verse collections.
-    // We filter by path to isolate the requested version, then by text containment.
     const snap = await db
       .collectionGroup("verses")
-      .limit(5000)
+      .orderBy(admin.firestore.FieldPath.documentId())
+      .startAt(pathPrefix)
+      .endAt(pathEnd)
+      .limit(40000)
       .get();
 
     const results: Array<{
@@ -906,16 +910,13 @@ export const searchVerses = functions
     }> = [];
 
     for (const doc of snap.docs) {
-      // Only include docs belonging to the requested version
-      if (!doc.ref.path.startsWith(pathPrefix)) continue;
-
       const data = doc.data();
       const text: string = data.text ?? data.verseText ?? "";
       if (!text.toLowerCase().includes(query)) continue;
 
       // Path: bible/{version}/books/{book}/chapters/{chapter}/verses/{id}
       const segments = doc.ref.path.split("/");
-      const book = segments[3] ?? data.bookId ?? "";
+      const book = data.bookId ?? segments[3] ?? "";
       const chapter = data.chapterNumber ?? parseInt(segments[5] ?? "0", 10);
       const verse = data.verseNumber ?? 0;
       const reference = data.reference ?? `${book} ${chapter}:${verse}`;
