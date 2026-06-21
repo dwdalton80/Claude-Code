@@ -5,6 +5,7 @@ import '../../core/constants/colors.dart';
 import '../../core/constants/session_length.dart';
 import '../../core/constants/typography.dart';
 import '../../core/constants/xp_rewards.dart';
+import '../../core/walkthrough/walkthrough_keys.dart';
 import '../../widgets/common/flame_cta_button.dart';
 import '../../widgets/common/progress_bar.dart';
 import '../../widgets/gamification/xp_burst.dart';
@@ -136,9 +137,7 @@ class _QuestScreenState extends ConsumerState<QuestScreen> {
     return Scaffold(
       backgroundColor: AppColors.deepSlate,
       body: SafeArea(
-        child: Stack(
-          children: [
-            Column(
+        child: Column(
               children: [
                 if (_showSparkHint)
                   Padding(
@@ -178,20 +177,14 @@ class _QuestScreenState extends ConsumerState<QuestScreen> {
                   sessionLength: _sessionLength,
                   onLengthChanged: (l) => setState(() => _sessionLength = l),
                   onStart: _startSession,
+                  onRandomSpark: _randomSpark,
                 )),
                 Expanded(flex: 2, child: _StatsBar(
                   streak: _streak,
-                  dailyXp: _dailyXp % _dailyXpGoal,
+                  dailyXp: _dailyXp.clamp(0, _dailyXpGoal),
                   dailyXpGoal: _dailyXpGoal,
                 )),
               ],
-            ),
-            Positioned(
-              right: 20,
-              bottom: 80,
-              child: _RandomSparkFAB(onTap: _randomSpark),
-            ),
-          ],
         ),
       ),
     );
@@ -244,6 +237,7 @@ class _QuestCard extends StatelessWidget {
   final SessionLength sessionLength;
   final ValueChanged<SessionLength> onLengthChanged;
   final VoidCallback onStart;
+  final VoidCallback onRandomSpark;
 
   const _QuestCard({
     required this.passage,
@@ -252,6 +246,7 @@ class _QuestCard extends StatelessWidget {
     required this.sessionLength,
     required this.onLengthChanged,
     required this.onStart,
+    required this.onRandomSpark,
   });
 
   @override
@@ -259,6 +254,7 @@ class _QuestCard extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
       child: Container(
+        key: WalkthroughKeys.questPassageCard,
         width: double.infinity,
         decoration: BoxDecoration(
           color: AppColors.cardDark,
@@ -308,6 +304,7 @@ class _QuestCard extends StatelessWidget {
             ),
             const SizedBox(height: 20),
             _SessionToggle(
+              key: WalkthroughKeys.sessionToggle,
               selected: sessionLength,
               onChanged: onLengthChanged,
             ),
@@ -317,8 +314,42 @@ class _QuestCard extends StatelessWidget {
                 onTap: onStart,
                 child: Image.asset(
                   'assets/images/start_quest_button.png',
+                  key: WalkthroughKeys.startQuestButton,
                   width: double.infinity,
                   fit: BoxFit.contain,
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Center(
+              child: GestureDetector(
+                key: WalkthroughKeys.randomSpark,
+                onTap: onRandomSpark,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Image.asset(
+                      'assets/images/random_spark.png',
+                      width: 64,
+                      height: 64,
+                      fit: BoxFit.contain,
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Random Spark',
+                      style: AppTypography.labelSmall.copyWith(
+                        color: AppColors.warmGold,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Jump to a surprise verse',
+                      style: AppTypography.bodySmall.copyWith(
+                        color: AppColors.textSecondary,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -383,7 +414,7 @@ class _SessionToggle extends StatelessWidget {
   final SessionLength selected;
   final ValueChanged<SessionLength> onChanged;
 
-  const _SessionToggle({required this.selected, required this.onChanged});
+  const _SessionToggle({super.key, required this.selected, required this.onChanged});
 
   static const _meta = {
     SessionLength.spark: ('Spark', '~90 sec', 'One verse + reflection'),
@@ -484,20 +515,3 @@ class _StatsBar extends StatelessWidget {
   }
 }
 
-class _RandomSparkFAB extends StatelessWidget {
-  final VoidCallback onTap;
-  const _RandomSparkFAB({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Image.asset(
-        'assets/images/random_spark.png',
-        width: 72,
-        height: 72,
-        fit: BoxFit.contain,
-      ),
-    );
-  }
-}

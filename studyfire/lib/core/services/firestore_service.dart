@@ -108,6 +108,40 @@ class FirestoreService {
     return snap.docs.map((d) => BibleVerse.fromFirestore(d)).toList();
   }
 
+  /// Resolves any reference — single verse ("John 3:16") or range ("John 3:22-24").
+  /// Returns a combined BibleVerse with concatenated text, or null if not found.
+  Future<BibleVerse?> getVerseOrRange(String version, String reference) async {
+    final rangeRegex = RegExp(r'^(.+\d+:\d+)-(\d+)$');
+    final rangeMatch = rangeRegex.firstMatch(reference.trim());
+    if (rangeMatch != null) {
+      // It's a range like "John 3:22-24"
+      final startRef = rangeMatch.group(1)!.trim();
+      final endVerseNum = int.tryParse(rangeMatch.group(2)!.trim());
+      final parts = _parseReference(startRef);
+      if (parts == null || endVerseNum == null) return null;
+      final startVerseNum = int.parse(parts['verse']!);
+      final verses = await getVerses(
+        version,
+        parts['book']!,
+        int.parse(parts['chapter']!),
+        startVerse: startVerseNum,
+        endVerse: endVerseNum,
+      );
+      if (verses.isEmpty) return null;
+      // Combine into a single pseudo-verse
+      final combinedText = verses.map((v) => '${v.verseNum} ${v.text}').join(' ');
+      return BibleVerse(
+        id: verses.first.id,
+        verseNum: verses.first.verseNum,
+        text: combinedText,
+        reference: reference,
+        book: verses.first.book,
+        chapter: verses.first.chapter,
+      );
+    }
+    return getVerse(version, reference);
+  }
+
   Future<BibleVerse?> getVerse(String version, String reference) async {
     // reference format: "John 3:16"
     final parts = _parseReference(reference);
@@ -575,15 +609,94 @@ class FirestoreService {
   String _dateKey(DateTime dt) =>
       '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
 
+  // Maps common book names/abbreviations → 3-letter Firestore book IDs
+  static const _bookIdMap = <String, String>{
+    // Old Testament
+    'genesis': 'gen', 'gen': 'gen',
+    'exodus': 'exo', 'exo': 'exo', 'ex': 'exo',
+    'leviticus': 'lev', 'lev': 'lev',
+    'numbers': 'num', 'num': 'num',
+    'deuteronomy': 'deu', 'deu': 'deu', 'deut': 'deu',
+    'joshua': 'jos', 'jos': 'jos', 'josh': 'jos',
+    'judges': 'jdg', 'jdg': 'jdg', 'judg': 'jdg',
+    'ruth': 'rut', 'rut': 'rut',
+    '1 samuel': '1sa', '1sa': '1sa', '1sam': '1sa',
+    '2 samuel': '2sa', '2sa': '2sa', '2sam': '2sa',
+    '1 kings': '1ki', '1ki': '1ki',
+    '2 kings': '2ki', '2ki': '2ki',
+    '1 chronicles': '1ch', '1ch': '1ch', '1chr': '1ch',
+    '2 chronicles': '2ch', '2ch': '2ch', '2chr': '2ch',
+    'ezra': 'ezr', 'ezr': 'ezr',
+    'nehemiah': 'neh', 'neh': 'neh',
+    'esther': 'est', 'est': 'est',
+    'job': 'job',
+    'psalms': 'psa', 'psalm': 'psa', 'psa': 'psa', 'ps': 'psa',
+    'proverbs': 'pro', 'pro': 'pro', 'prov': 'pro',
+    'ecclesiastes': 'ecc', 'ecc': 'ecc', 'eccl': 'ecc',
+    'song of solomon': 'sng', 'song of songs': 'sng', 'sng': 'sng', 'sos': 'sng',
+    'isaiah': 'isa', 'isa': 'isa',
+    'jeremiah': 'jer', 'jer': 'jer',
+    'lamentations': 'lam', 'lam': 'lam',
+    'ezekiel': 'ezk', 'ezk': 'ezk', 'ezek': 'ezk',
+    'daniel': 'dan', 'dan': 'dan',
+    'hosea': 'hos', 'hos': 'hos',
+    'joel': 'jol', 'jol': 'jol',
+    'amos': 'amo', 'amo': 'amo',
+    'obadiah': 'oba', 'oba': 'oba',
+    'jonah': 'jon', 'jon': 'jon',
+    'micah': 'mic', 'mic': 'mic',
+    'nahum': 'nam', 'nam': 'nam',
+    'habakkuk': 'hab', 'hab': 'hab',
+    'zephaniah': 'zep', 'zep': 'zep',
+    'haggai': 'hag', 'hag': 'hag',
+    'zechariah': 'zec', 'zec': 'zec',
+    'malachi': 'mal', 'mal': 'mal',
+    // New Testament
+    'matthew': 'mat', 'mat': 'mat', 'matt': 'mat',
+    'mark': 'mrk', 'mrk': 'mrk',
+    'luke': 'luk', 'luk': 'luk',
+    'john': 'jhn', 'jhn': 'jhn',
+    'acts': 'act', 'act': 'act',
+    'romans': 'rom', 'rom': 'rom',
+    '1 corinthians': '1co', '1co': '1co', '1cor': '1co',
+    '2 corinthians': '2co', '2co': '2co', '2cor': '2co',
+    'galatians': 'gal', 'gal': 'gal',
+    'ephesians': 'eph', 'eph': 'eph',
+    'philippians': 'php', 'php': 'php', 'phil': 'php',
+    'colossians': 'col', 'col': 'col',
+    '1 thessalonians': '1th', '1th': '1th', '1thess': '1th',
+    '2 thessalonians': '2th', '2th': '2th', '2thess': '2th',
+    '1 timothy': '1ti', '1ti': '1ti', '1tim': '1ti',
+    '2 timothy': '2ti', '2ti': '2ti', '2tim': '2ti',
+    'titus': 'tit', 'tit': 'tit',
+    'philemon': 'phm', 'phm': 'phm',
+    'hebrews': 'heb', 'heb': 'heb',
+    'james': 'jas', 'jas': 'jas',
+    '1 peter': '1pe', '1pe': '1pe', '1pet': '1pe',
+    '2 peter': '2pe', '2pe': '2pe', '2pet': '2pe',
+    '1 john': '1jn', '1jn': '1jn',
+    '2 john': '2jn', '2jn': '2jn',
+    '3 john': '3jn', '3jn': '3jn',
+    'jude': 'jud', 'jud': 'jud',
+    'revelation': 'rev', 'rev': 'rev',
+  };
+
   Map<String, String>? _parseReference(String ref) {
-    // Handles "John 3:16", "1 Corinthians 13:4"
-    final regex = RegExp(r'^(\d?\s?[A-Za-z]+)\s+(\d+):(\d+)$');
+    // Handles "John 3:16", "Psalm 23:1", "1 Corinthians 13:4"
+    // Non-greedy book match stops before the chapter number.
+    final regex = RegExp(r'^(\d\s)?([A-Za-z][A-Za-z\s]*?)\s+(\d+):(\d+)$');
     final match = regex.firstMatch(ref.trim());
     if (match == null) return null;
+    // Reconstruct book: optional leading digit + space + book name
+    final prefix = match.group(1) ?? '';          // e.g. "1 "
+    final name   = match.group(2)!.trim();        // e.g. "Corinthians"
+    final rawBook = (prefix + name).trim().toLowerCase();
+    final bookId = _bookIdMap[rawBook];
+    if (bookId == null) return null;
     return {
-      'book': match.group(1)!.trim().toLowerCase().replaceAll(' ', '_'),
-      'chapter': match.group(2)!,
-      'verse': match.group(3)!,
+      'book': bookId,
+      'chapter': match.group(3)!,
+      'verse': match.group(4)!,
     };
   }
 

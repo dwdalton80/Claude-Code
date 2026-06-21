@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/colors.dart';
 import '../../core/constants/typography.dart';
 import '../../core/constants/xp_rewards.dart';
+import '../../core/walkthrough/walkthrough_keys.dart';
 import '../../core/services/streak_service.dart';
 import '../../core/services/xp_service.dart';
 import '../../widgets/common/flame_cta_button.dart';
@@ -238,10 +239,11 @@ class _QuizScreenState extends ConsumerState<QuizScreen> {
     }
   }
 
-  void _finish() {
+  Future<void> _finish() async {
     final perfect = _score == _questions.length;
     final xp = XpRewards.completeQuiz + (perfect ? XpRewards.perfectScoreBonus : 0);
     _xpService.accumulateXp(widget.uid, xp);
+    await _xpService.flushSession(widget.uid);
     _streakService.recordActivity(widget.uid).catchError((_) {});
     // Track questionsAnswered
     FirebaseFirestore.instance.collection('users').doc(widget.uid).set({
@@ -613,10 +615,15 @@ class _QuizResultScreen extends StatelessWidget {
 
 // ── Quiz Home Screen ───────────────────────────────────────────────────────────
 
-class QuizHomeScreen extends ConsumerWidget {
+class QuizHomeScreen extends ConsumerStatefulWidget {
   final String uid;
   const QuizHomeScreen({super.key, required this.uid});
 
+  @override
+  ConsumerState<QuizHomeScreen> createState() => _QuizHomeScreenState();
+}
+
+class _QuizHomeScreenState extends ConsumerState<QuizHomeScreen> {
   static const _topics = [
     ('Anxiety & Fear', 'assets/images/topics/topic_anxiety_fear.png'),
     ('Identity', 'assets/images/topics/topic_identity.png'),
@@ -630,21 +637,66 @@ class QuizHomeScreen extends ConsumerWidget {
     ('Spiritual Growth', 'assets/images/topics/topic_spiritual_growth.png'),
   ];
 
-  static const _mastery = {
-    'Anxiety & Fear': 'Growing',
-    'Identity': 'Strong',
-    'Prayer': 'Exploring',
-  };
+  // Today's featured topic rotates daily through all 10 topics
+  static String get _todaysTopic {
+    final dayOfYear = DateTime.now().difference(DateTime(DateTime.now().year)).inDays;
+    return _topics[dayOfYear % _topics.length].$1;
+  }
+
+  // Map of topicTag → today's representative passageRef (from dailycache)
+  Map<String, String> _topicVerses = {};
+  int _todaysQuestionCount = 5;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  void initState() {
+    super.initState();
+    _loadDailyVerses();
+  }
+
+  Future<void> _loadDailyVerses() async {
+    try {
+      final today = DateTime.now().toIso8601String().split('T')[0];
+      final doc = await FirebaseFirestore.instance
+          .collection('dailycache')
+          .doc(today)
+          .get();
+      final quizData = doc.data()?['quizQuestions'] as Map?;
+      if (quizData == null) return;
+
+      final verses = <String, String>{};
+      for (final (tag, _) in _topics) {
+        final questions = quizData[tag] as List?;
+        if (questions != null && questions.isNotEmpty) {
+          // Find first question with a passageRef
+          for (final q in questions) {
+            final ref = (q as Map)['passageRef'] as String?;
+            if (ref != null && ref.isNotEmpty) {
+              verses[tag] = ref;
+              break;
+            }
+          }
+          // Update today's question count for the featured topic
+          if (tag == _todaysTopic) {
+            _todaysQuestionCount = questions.length.clamp(1, 10);
+          }
+        }
+      }
+      if (mounted) setState(() => _topicVerses = verses);
+    } catch (e) {
+      debugPrint('QuizHome: failed to load daily verses: $e');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final todaysTopic = _todaysTopic;
     return Scaffold(
       backgroundColor: AppColors.deepSlate,
       appBar: AppBar(title: const Text('Quiz')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // Today's Quiz card
+          // Today's Quiz card — topic rotates daily
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
@@ -657,11 +709,18 @@ class QuizHomeScreen extends ConsumerWidget {
               children: [
                 Text('TODAY\'S QUIZ', style: AppTypography.labelSmall.copyWith(color: AppColors.warmGold)),
                 const SizedBox(height: 8),
-                const Text('Identity', style: AppTypography.displaySmall),
+                Text(todaysTopic, style: AppTypography.displaySmall),
+                if (_topicVerses[todaysTopic] != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    _topicVerses[todaysTopic]!,
+                    style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary),
+                  ),
+                ],
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    const Text('5 questions', style: AppTypography.bodySmall),
+                    Text('$_todaysQuestionCount questions', style: AppTypography.bodySmall),
                     const SizedBox(width: 12),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -679,7 +738,7 @@ class QuizHomeScreen extends ConsumerWidget {
                   onTap: () => Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => QuizScreen(uid: uid, topicTag: 'Identity'),
+                      builder: (_) => QuizScreen(uid: widget.uid, topicTag: todaysTopic),
                     ),
                   ),
                   child: Image.asset(
@@ -696,48 +755,50 @@ class QuizHomeScreen extends ConsumerWidget {
           const Text('My Topics', style: AppTypography.labelLarge),
           const SizedBox(height: 12),
           GridView.builder(
+            key: WalkthroughKeys.quizTopicGrid,
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 2,
               crossAxisSpacing: 10,
               mainAxisSpacing: 10,
-              childAspectRatio: 1.0,
+              childAspectRatio: 0.85,
             ),
             itemCount: _topics.length,
             itemBuilder: (_, i) {
               final (tag, imagePath) = _topics[i];
-              final mastery = _mastery[tag] ?? 'Exploring';
-              final masteryColor = mastery == 'Strong'
-                  ? AppColors.emerald
-                  : mastery == 'Growing'
-                      ? AppColors.warmGold
-                      : AppColors.textSecondary;
+              final verseRef = _topicVerses[tag];
               return GestureDetector(
                 onTap: () => Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => QuizScreen(uid: uid, topicTag: tag),
+                    builder: (_) => QuizScreen(uid: widget.uid, topicTag: tag),
                   ),
                 ),
                 child: Container(
-                  padding: const EdgeInsets.all(12),
+                  clipBehavior: Clip.hardEdge,
                   decoration: BoxDecoration(
                     color: AppColors.cardDark,
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(40),
-                        child: Image.asset(imagePath, width: 64, height: 64, fit: BoxFit.cover),
+                      Expanded(
+                        child: Image.asset(
+                          imagePath,
+                          fit: BoxFit.cover,
+                        ),
                       ),
-                      const SizedBox(height: 8),
-                      Text(tag, style: AppTypography.labelSmall, maxLines: 2, textAlign: TextAlign.center),
-                      const SizedBox(height: 2),
-                      Text(mastery, style: AppTypography.bodySmall.copyWith(color: masteryColor, fontSize: 11), textAlign: TextAlign.center),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
+                        child: Text(
+                          tag,
+                          style: AppTypography.labelSmall,
+                          maxLines: 2,
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
                     ],
                   ),
                 ),

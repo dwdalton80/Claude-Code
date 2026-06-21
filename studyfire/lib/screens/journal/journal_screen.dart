@@ -2,13 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../core/constants/colors.dart';
 import '../../core/constants/typography.dart';
 import '../../core/services/firestore_service.dart';
 import '../../core/services/streak_service.dart';
 import '../../models/journal_entry.dart';
 import '../../widgets/common/flame_cta_button.dart';
+import '../../widgets/common/premium_gate.dart';
 import '../../models/memory_verse.dart';
+import '../../app.dart';
 import '../memory_verse/memory_verse_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
@@ -225,7 +228,7 @@ class _JournalListState extends ConsumerState<_JournalList> {
             onDismissed: (_) async {
               final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
               await FirestoreService().deleteJournalEntry(uid, e.id);
-              setState(() => _entries.remove(filtered[i]));
+              setState(() => _entries.removeWhere((entry) => entry.id == e.id));
             },
             child: Card(
               color: AppColors.cardDark,
@@ -295,13 +298,21 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   DateTime _date = DateTime.now();
   bool _saved = false;
 
+  // Stores imported verse text displayed as a card, keyed by ref
+  final Map<String, String> _verseTexts = {};
+
   @override
   void initState() {
     super.initState();
+    _contentCtrl.addListener(_onContentChanged);
+    _contentCtrl.addListener(_onAnyEdit);
+    _titleCtrl.addListener(_onAnyEdit);
     if (widget.entry != null) {
       final e = widget.entry!;
       _titleCtrl.text = e.title;
-      _contentCtrl.text = e.content;
+      // Strip legacy imported verse text from content if present
+      final content = e.content;
+      _contentCtrl.text = content;
       _speakerCtrl.text = e.speaker ?? '';
       _scriptureRefs.addAll(e.scriptureRefs);
       _type = e.type;
@@ -310,13 +321,128 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
       _scriptureRefs.add(widget.verseRef!);
       _type = JournalType.personalStudy;
       if (widget.verseText != null) {
-        _contentCtrl.text = '"${widget.verseText}"\n\n';
+        _verseTexts[widget.verseRef!] = widget.verseText!;
       }
     }
   }
 
+  bool _atListening = false;
+
+  void _onAnyEdit() {
+    if (_saved) setState(() => _saved = false);
+  }
+
+  void _onContentChanged() {
+    if (_atListening) return;
+    final text = _contentCtrl.text;
+    final cursor = _contentCtrl.selection.baseOffset;
+    if (cursor > 0 && cursor <= text.length && text[cursor - 1] == '@') {
+      _atListening = true;
+      // Remove the @ and open the scripture picker
+      final before = text.substring(0, cursor - 1);
+      final after = text.substring(cursor);
+      _contentCtrl.value = TextEditingValue(
+        text: before + after,
+        selection: TextSelection.collapsed(offset: before.length),
+      );
+      _addScriptureRefInline().then((_) => _atListening = false);
+    }
+  }
+
+  Future<void> _addScriptureRefInline() async {
+    final refCtrl = TextEditingController();
+    String? errorText;
+    bool loading = false;
+
+    if (!mounted) return;
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.cardDark,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetCtx) => StatefulBuilder(builder: (ctx, setSheetState) {
+        return Padding(
+          padding: EdgeInsets.only(
+            left: 24, right: 24, top: 24,
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Link Scripture', style: AppTypography.labelLarge.copyWith(color: AppColors.warmGold)),
+              const SizedBox(height: 4),
+              Text('Single verse or range', style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary)),
+              const SizedBox(height: 16),
+              TextField(
+                controller: refCtrl,
+                autofocus: true,
+                style: AppTypography.bodyLarge,
+                decoration: InputDecoration(
+                  hintText: 'e.g. John 3:16 or John 3:22-24',
+                  hintStyle: AppTypography.bodyLarge.copyWith(color: AppColors.textSecondary),
+                  errorText: errorText,
+                  filled: true,
+                  fillColor: AppColors.surface,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                ),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  style: FilledButton.styleFrom(backgroundColor: AppColors.flameOrange),
+                  onPressed: loading ? null : () async {
+                    final ref = refCtrl.text.trim();
+                    if (ref.isEmpty) return;
+                    setSheetState(() { loading = true; errorText = null; });
+                    try {
+                      final verse = await FirestoreService().getVerseOrRange('kjv', ref);
+                      if (verse == null) {
+                        setSheetState(() { loading = false; errorText = 'Reference not found — try e.g. John 3:16 or John 3:22-24'; });
+                        return;
+                      }
+                      if (mounted) {
+                        Navigator.of(sheetCtx).pop();
+                        // Insert reference inline at cursor
+                        final cur = _contentCtrl.selection.baseOffset;
+                        final t = _contentCtrl.text;
+                        final newText = '${t.substring(0, cur)}[$ref] ${t.substring(cur)}';
+                        _contentCtrl.value = TextEditingValue(
+                          text: newText,
+                          selection: TextSelection.collapsed(offset: cur + ref.length + 3),
+                        );
+                        // Also track for Personal Study cards
+                        if (_type == JournalType.personalStudy) {
+                          setState(() {
+                            if (!_scriptureRefs.contains(ref)) _scriptureRefs.add(ref);
+                            _verseTexts[ref] = verse.text;
+                          });
+                        }
+                      }
+                    } catch (_) {
+                      setSheetState(() { loading = false; errorText = 'Could not load verse — try again'; });
+                    }
+                  },
+                  child: loading
+                      ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      : const Text('Link'),
+                ),
+              ),
+            ],
+          ),
+        );
+      }),
+    );
+  }
+
   @override
   void dispose() {
+    _contentCtrl.removeListener(_onContentChanged);
+    _contentCtrl.removeListener(_onAnyEdit);
+    _titleCtrl.removeListener(_onAnyEdit);
     _titleCtrl.dispose();
     _contentCtrl.dispose();
     _speakerCtrl.dispose();
@@ -425,6 +551,51 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
               const SizedBox(height: 16),
             ],
 
+            if (_type == JournalType.personalStudy) ...[
+              // Title
+              TextField(
+                controller: _titleCtrl,
+                style: AppTypography.displaySmall,
+                decoration: const InputDecoration(
+                  hintText: 'Title (optional)',
+                  border: InputBorder.none,
+                  filled: false,
+                ),
+              ),
+              const SizedBox(height: 8),
+              // Scripture cards — one per added reference
+              ..._scriptureRefs.map((ref) => _ScriptureCard(
+                reference: ref,
+                verseText: _verseTexts[ref],
+                onRemove: () => setState(() {
+                  _scriptureRefs.remove(ref);
+                  _verseTexts.remove(ref);
+                }),
+              )),
+              // Add Scripture button — uses OutlinedButton for reliable tap handling
+              OutlinedButton.icon(
+                onPressed: _addScriptureRef,
+                icon: const Icon(Icons.add, size: 14, color: AppColors.warmGold),
+                label: Text(
+                  'Add Scripture',
+                  style: AppTypography.labelSmall.copyWith(color: AppColors.warmGold),
+                ),
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(color: AppColors.warmGold.withOpacity(0.4)),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+              const SizedBox(height: 16),
+              // Divider before notes
+              if (_scriptureRefs.isNotEmpty) ...[
+                const Divider(color: AppColors.surface, height: 1),
+                const SizedBox(height: 12),
+              ],
+            ],
+
             // Body
             TextField(
               controller: _contentCtrl,
@@ -432,8 +603,8 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
               style: AppTypography.bodyLarge,
               decoration: InputDecoration(
                 hintText: _type == JournalType.sermon
-                    ? 'Notes…\n\nTip: Type @ to link a scripture reference'
-                    : 'What stood out? What does this mean? What will I do?',
+                    ? 'Notes…\n\n(Tip: type @ to link a scripture reference)'
+                    : 'What stood out? What does this mean? What will I do?\n\n(Tip: type @ to link a scripture reference)',
                 border: InputBorder.none,
                 filled: false,
               ),
@@ -469,7 +640,111 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   }
 
   void _addScriptureRef() {
-    // Show scripture search bottom sheet
+    final refCtrl = TextEditingController();
+    String? errorText;
+    bool loading = false;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.cardDark,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetCtx) {
+        return StatefulBuilder(builder: (ctx, setSheetState) {
+          return Padding(
+            padding: EdgeInsets.only(
+              left: 24, right: 24, top: 24,
+              bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Add Scripture', style: AppTypography.labelLarge.copyWith(color: AppColors.warmGold)),
+                const SizedBox(height: 4),
+                Text('Single verse or range', style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary)),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: refCtrl,
+                  autofocus: true,
+                  style: AppTypography.bodyLarge,
+                  decoration: InputDecoration(
+                    hintText: 'e.g. John 3:16 or John 3:22-24',
+                    hintStyle: AppTypography.bodyLarge.copyWith(color: AppColors.textSecondary),
+                    errorText: errorText,
+                    filled: true,
+                    fillColor: AppColors.surface,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    style: FilledButton.styleFrom(backgroundColor: AppColors.flameOrange),
+                    onPressed: loading ? null : () async {
+                      final ref = refCtrl.text.trim();
+                      if (ref.isEmpty) return;
+                      setSheetState(() { loading = true; errorText = null; });
+                      try {
+                        final verse = await FirestoreService().getVerseOrRange('kjv', ref);
+                        if (verse == null) {
+                          setSheetState(() { loading = false; errorText = 'Reference not found — try e.g. John 3:16 or John 3:22-24'; });
+                          return;
+                        }
+                        if (mounted) {
+                          Navigator.of(sheetCtx).pop();
+                          setState(() {
+                            if (!_scriptureRefs.contains(ref)) {
+                              _scriptureRefs.add(ref);
+                            }
+                            _verseTexts[ref] = verse.text;
+                          });
+                        }
+                      } catch (_) {
+                        setSheetState(() { loading = false; errorText = 'Could not load verse — try again'; });
+                      }
+                    },
+                    child: loading
+                        ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : const Text('Add'),
+                  ),
+                ),
+              ],
+            ),
+          );
+        });
+      },
+    );
+  }
+
+  Future<bool> _checkDebriefAccess() async {
+    final profile = ref.read(currentProfileProvider).valueOrNull;
+    if (profile?.isPremium ?? false) return true;
+
+    // Free: 1 debrief per calendar month
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return false;
+    final monthKey = DateTime.now().toIso8601String().substring(0, 7); // YYYY-MM
+    final ref2 = FirebaseFirestore.instance
+        .collection('users').doc(uid)
+        .collection('aiUsage').doc('debrief_$monthKey');
+    final snap = await ref2.get();
+    final count = snap.data()?['count'] as int? ?? 0;
+    if (count >= 1) {
+      if (mounted) {
+        showPaywallSheet(context, featureName: 'AI Sermon Debrief');
+      }
+      return false;
+    }
+    // Increment before calling — prevents race condition double-use
+    await ref2.set(
+      {'count': count + 1, 'updatedAt': FieldValue.serverTimestamp()},
+      SetOptions(merge: true),
+    );
+    return true;
   }
 
   void _unpackThis() async {
@@ -479,6 +754,8 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
       );
       return;
     }
+    final allowed = await _checkDebriefAccess();
+    if (!allowed) return;
     bool dialogShowing = false;
     showDialog(
       context: context,
@@ -498,7 +775,12 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
         'scriptureRefs': _scriptureRefs,
         'studyLevel': 'intermediate',
       });
-      if (mounted && dialogShowing) Navigator.of(context, rootNavigator: true).pop();
+      if (mounted && dialogShowing) {
+        Navigator.of(context, rootNavigator: true).pop();
+        dialogShowing = false;
+      }
+      // Yield a frame so the pop fully flushes before pushing the result sheet.
+      await Future<void>.delayed(Duration.zero);
       final data = result.data as Map<String, dynamic>;
       if (mounted) {
         showModalBottomSheet(
@@ -625,6 +907,156 @@ class _Chip extends StatelessWidget {
   }
 }
 
+// ── Scripture reference navigation helper ────────────────────────────────────
+
+/// Parses "John 3:16" or "John 3:22-24" into reader route extra args.
+Map<String, dynamic>? _readerArgsFromRef(String reference) {
+  const bookIdMap = {
+    'genesis': 'gen', 'exodus': 'exo', 'leviticus': 'lev', 'numbers': 'num',
+    'deuteronomy': 'deu', 'joshua': 'jos', 'judges': 'jdg', 'ruth': 'rut',
+    '1 samuel': '1sa', '2 samuel': '2sa', '1 kings': '1ki', '2 kings': '2ki',
+    '1 chronicles': '1ch', '2 chronicles': '2ch', 'ezra': 'ezr', 'nehemiah': 'neh',
+    'esther': 'est', 'job': 'job', 'psalms': 'psa', 'psalm': 'psa', 'proverbs': 'pro',
+    'ecclesiastes': 'ecc', 'song of solomon': 'sng', 'isaiah': 'isa',
+    'jeremiah': 'jer', 'lamentations': 'lam', 'ezekiel': 'ezk', 'daniel': 'dan',
+    'hosea': 'hos', 'joel': 'jol', 'amos': 'amo', 'obadiah': 'oba',
+    'jonah': 'jon', 'micah': 'mic', 'nahum': 'nam', 'habakkuk': 'hab',
+    'zephaniah': 'zep', 'haggai': 'hag', 'zechariah': 'zec', 'malachi': 'mal',
+    'matthew': 'mat', 'mark': 'mrk', 'luke': 'luk', 'john': 'jhn',
+    'acts': 'act', 'romans': 'rom', '1 corinthians': '1co', '2 corinthians': '2co',
+    'galatians': 'gal', 'ephesians': 'eph', 'philippians': 'php', 'colossians': 'col',
+    '1 thessalonians': '1th', '2 thessalonians': '2th', '1 timothy': '1ti',
+    '2 timothy': '2ti', 'titus': 'tit', 'philemon': 'phm', 'hebrews': 'heb',
+    'james': 'jas', '1 peter': '1pe', '2 peter': '2pe', '1 john': '1jn',
+    '2 john': '2jn', '3 john': '3jn', 'jude': 'jud', 'revelation': 'rev',
+    // short IDs pass through
+    'gen': 'gen', 'exo': 'exo', 'lev': 'lev', 'num': 'num', 'deu': 'deu',
+    'jos': 'jos', 'jdg': 'jdg', 'rut': 'rut', '1sa': '1sa', '2sa': '2sa',
+    '1ki': '1ki', '2ki': '2ki', '1ch': '1ch', '2ch': '2ch', 'ezr': 'ezr',
+    'neh': 'neh', 'est': 'est', 'psa': 'psa', 'pro': 'pro',
+    'ecc': 'ecc', 'sng': 'sng', 'isa': 'isa', 'jer': 'jer', 'lam': 'lam',
+    'ezk': 'ezk', 'dan': 'dan', 'hos': 'hos', 'jol': 'jol', 'amo': 'amo',
+    'oba': 'oba', 'jon': 'jon', 'mic': 'mic', 'nam': 'nam', 'hab': 'hab',
+    'zep': 'zep', 'hag': 'hag', 'zec': 'zec', 'mal': 'mal', 'mat': 'mat',
+    'mrk': 'mrk', 'luk': 'luk', 'jhn': 'jhn', 'act': 'act', 'rom': 'rom',
+    '1co': '1co', '2co': '2co', 'gal': 'gal', 'eph': 'eph', 'php': 'php',
+    'col': 'col', '1th': '1th', '2th': '2th', '1ti': '1ti', '2ti': '2ti',
+    'tit': 'tit', 'phm': 'phm', 'heb': 'heb', 'jas': 'jas', '1pe': '1pe',
+    '2pe': '2pe', '1jn': '1jn', '2jn': '2jn', '3jn': '3jn', 'jud': 'jud', 'rev': 'rev',
+  };
+
+  // Strip range suffix for parsing (John 3:22-24 → John 3:22)
+  final stripped = reference.replaceAll(RegExp(r'-\d+$'), '').trim();
+  final regex = RegExp(r'^(\d\s+)?([A-Za-z][A-Za-z\s]*?)\s+(\d+):(\d+)$');
+  final m = regex.firstMatch(stripped);
+  if (m == null) return null;
+
+  final prefix = (m.group(1) ?? '').trim();
+  final name = m.group(2)!.trim();
+  final rawBook = prefix.isEmpty ? name.toLowerCase() : '$prefix $name'.toLowerCase();
+  final bookId = bookIdMap[rawBook];
+  if (bookId == null) return null;
+
+  return {
+    'book': bookId,
+    'chapter': int.tryParse(m.group(3)!) ?? 1,
+    'startVerse': int.tryParse(m.group(4)!) ?? 1,
+  };
+}
+
+void _openInReader(BuildContext context, String reference) {
+  final args = _readerArgsFromRef(reference);
+  if (args == null) return;
+  context.push('/reader', extra: args);
+}
+
+// ── Scripture Card (Personal Study) ──────────────────────────────────────────
+
+class _ScriptureCard extends StatelessWidget {
+  final String reference;
+  final String? verseText;
+  final VoidCallback onRemove;
+
+  const _ScriptureCard({
+    required this.reference,
+    required this.verseText,
+    required this.onRemove,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => _openInReader(context, reference),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        decoration: BoxDecoration(
+          color: AppColors.warmGold.withOpacity(0.07),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.warmGold.withOpacity(0.25)),
+        ),
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Gold accent bar
+              Container(
+                width: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.warmGold,
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(12),
+                    bottomLeft: Radius.circular(12),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            reference,
+                            style: AppTypography.labelSmall.copyWith(
+                              color: AppColors.warmGold,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          const Icon(Icons.open_in_new, size: 11, color: AppColors.warmGold),
+                        ],
+                      ),
+                      if (verseText != null && verseText!.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          '"$verseText"',
+                          style: AppTypography.bodyMedium.copyWith(
+                            fontStyle: FontStyle.italic,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close, size: 16, color: AppColors.textSecondary),
+                onPressed: onRemove,
+                padding: const EdgeInsets.all(8),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Scripture Ref Row (Sermon chips) ─────────────────────────────────────────
+
 class _ScriptureRefRow extends StatelessWidget {
   final List<String> refs;
   final VoidCallback onAdd;
@@ -638,50 +1070,44 @@ class _ScriptureRefRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: [
-          GestureDetector(
-            onTap: onAdd,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                border: Border.all(color: AppColors.warmGold.withOpacity(0.5), style: BorderStyle.solid),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.add, size: 14, color: AppColors.warmGold),
-                  const SizedBox(width: 4),
-                  Text(
-                    'Add Scripture',
-                    style: AppTypography.labelSmall.copyWith(color: AppColors.warmGold),
-                  ),
-                ],
-              ),
-            ),
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        OutlinedButton.icon(
+          onPressed: onAdd,
+          icon: const Icon(Icons.add, size: 14, color: AppColors.warmGold),
+          label: Text(
+            'Add Scripture',
+            style: AppTypography.labelSmall.copyWith(color: AppColors.warmGold),
           ),
-          ...refs.map((ref) => Padding(
-                padding: const EdgeInsets.only(left: 8),
-                child: GestureDetector(
-                  onLongPress: () => onRemove(ref),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: AppColors.warmGold.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      ref,
-                      style: AppTypography.labelSmall.copyWith(color: AppColors.warmGold),
-                    ),
-                  ),
+          style: OutlinedButton.styleFrom(
+            side: BorderSide(color: AppColors.warmGold.withOpacity(0.5)),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            minimumSize: Size.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+        ),
+        ...refs.map((ref) => GestureDetector(
+              onTap: () => _openInReader(context, ref),
+              onLongPress: () => onRemove(ref),
+              child: Chip(
+                label: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(ref, style: AppTypography.labelSmall.copyWith(color: AppColors.warmGold)),
+                    const SizedBox(width: 4),
+                    const Icon(Icons.open_in_new, size: 10, color: AppColors.warmGold),
+                  ],
                 ),
-              )),
-        ],
-      ),
+                backgroundColor: AppColors.warmGold.withOpacity(0.15),
+                side: BorderSide.none,
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                visualDensity: VisualDensity.compact,
+              ),
+            )),
+      ],
     );
   }
 }

@@ -646,7 +646,23 @@ class _Stage4AlmostThereState extends State<_Stage4AlmostThere> {
           }),
           const SizedBox(height: 24),
           if (!_checked)
-            FlameCTAButton(label: 'Check', onPressed: _submit),
+            FlameCTAButton(label: 'Check', onPressed: _submit)
+          else if (_results.values.any((v) => v == false)) ...[
+            Text(
+              '${_results.values.where((v) => v == false).length} word${_results.values.where((v) => v == false).length == 1 ? '' : 's'} missed. Try again!',
+              style: AppTypography.bodyMedium.copyWith(color: AppColors.error),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 12),
+            FlameCTAButton(
+              label: 'Try Again',
+              onPressed: () => setState(() {
+                _checked = false;
+                _results.clear();
+                for (final c in _controllers) c.clear();
+              }),
+            ),
+          ],
         ],
       ),
     );
@@ -758,6 +774,22 @@ class _Stage5WriteItState extends State<_Stage5WriteIt> {
             _buildScoredText(),
             const SizedBox(height: 16),
             _buildLegend(),
+            if (_results!.any((r) => r == _WordResult.wrong)) ...[
+              const SizedBox(height: 20),
+              Text(
+                'Need 90% to pass. Keep going!',
+                style: AppTypography.bodyMedium.copyWith(color: AppColors.error),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 12),
+              FlameCTAButton(
+                label: 'Try Again',
+                onPressed: () => setState(() {
+                  _results = null;
+                  _ctrl.clear();
+                }),
+              ),
+            ],
           ],
         ],
       ),

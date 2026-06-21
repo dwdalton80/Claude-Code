@@ -95,16 +95,24 @@ class StreakService {
 
   Future<bool> useStreakFreeze(String uid) async {
     final ref = _firestore.collection('users').doc(uid);
-    final snap = await ref.get();
-    final profile = (snap.data() as Map<String, dynamic>)['profile'] as Map<String, dynamic>;
+    bool used = false;
 
-    final freezeCount = profile['streakFreezeCount'] ?? 0;
-    if (freezeCount <= 0) return false;
+    await _firestore.runTransaction((tx) async {
+      final snap = await tx.get(ref);
+      final profile = ((snap.data() as Map<String, dynamic>?)
+              ?['profile'] as Map<String, dynamic>?) ??
+          {};
+      final freezeCount = profile['streakFreezeCount'] as int? ?? 0;
+      if (freezeCount <= 0) return; // nothing to do
 
-    await ref.update({
-      'profile.streakFreezeCount': FieldValue.increment(-1),
-      'profile.lastActiveDate': Timestamp.fromDate(DateTime.now()),
+      tx.update(ref, {
+        'profile.streakFreezeCount': FieldValue.increment(-1),
+        'profile.lastActiveDate': Timestamp.fromDate(DateTime.now()),
+      });
+      used = true;
     });
+
+    if (!used) return false;
 
     return true;
   }

@@ -21,9 +21,12 @@ class AppColors {
 
   // Highlight colors
   static const highlightYellow = Color(0xFFFFF176);
+  static const highlightOrange = Color(0xFFFFCC80);
   static const highlightGreen = Color(0xFFA5D6A7);
   static const highlightBlue = Color(0xFF90CAF9);
+  static const highlightPurple = Color(0xFFCE93D8);
   static const highlightPink = Color(0xFFF48FB1);
+  static const highlightRed = Color(0xFFEF9A9A);
 
   // Surface variants
   static const surface = Color(0xFF252838);

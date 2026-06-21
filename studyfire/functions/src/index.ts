@@ -4,7 +4,7 @@ import { generateSparkQuestion } from "./claude/spark_questions";
 import { generateAiStudy, StudyContext } from "./claude/ai_study";
 import { generateQuizBatch, generateWordOfDay } from "./claude/quiz_generation";
 import { generateSermonDebrief, suggestSermonTitle, DebriefContext } from "./claude/sermon_debrief";
-import { getClaudeClient, MODELS } from "./claude/client";
+import { getClaudeClient, MODELS, StudyLevel, studyLevelInstructions } from "./claude/client";
 import { recordStudyActivity, replenishGraceDays } from "./gamification/streak_manager";
 import { sm2Update, scoreToGrade } from "./gamification/sm2_algorithm";
 import {
@@ -138,11 +138,11 @@ export const sendDailyGroupDigests = functions.pubsub.schedule("0 19 * * *").onR
 
 // ── HTTPS Callable: AI Study ──────────────────────────────────────────────────
 
-export const getAiStudy = functions.https.onCall(async (request) => {
-  if (!request.auth) throw new functions.https.HttpsError("unauthenticated", "Must be signed in");
+export const getAiStudy = functions.https.onCall(async (reqData, context) => {
+  if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "Must be signed in");
 
-  const uid = request.auth.uid;
-  const data = request.data as StudyContext & { passageId: string };
+  const uid = context.auth.uid;
+  const data = reqData as StudyContext & { passageId: string };
 
   // Check if cached in Firestore already
   const cacheRef = db
@@ -176,8 +176,11 @@ export const getAiStudy = functions.https.onCall(async (request) => {
 
 // ── HTTPS Callable: Sermon Debrief ────────────────────────────────────────────
 
-export const generateDebrief = functions.https.onCall(async (request) => {
-  const raw = (request as any).data ?? (request as any).body?.data ?? request ?? {};
+export const generateDebrief = functions.https.onCall(async (reqData, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError("unauthenticated", "Must be signed in");
+  }
+  const raw = reqData ?? {};
   functions.logger.info("generateDebrief raw:", JSON.stringify(raw).substring(0, 200));
   try {
     const data: DebriefContext = {
@@ -198,20 +201,20 @@ export const generateDebrief = functions.https.onCall(async (request) => {
 
 // ── HTTPS Callable: Suggest Sermon Title ─────────────────────────────────────
 
-export const suggestTitle = functions.https.onCall(async (request) => {
-  if (!request.auth) throw new functions.https.HttpsError("unauthenticated", "Must be signed in");
+export const suggestTitle = functions.https.onCall(async (reqData, context) => {
+  if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "Must be signed in");
 
-  const { noteContent } = request.data as { noteContent: string };
+  const { noteContent } = reqData as { noteContent: string };
   return { title: await suggestSermonTitle(noteContent) };
 });
 
 // ── HTTPS Callable: Record Session End ───────────────────────────────────────
 
-export const recordSessionEnd = functions.https.onCall(async (request) => {
-  if (!request.auth) throw new functions.https.HttpsError("unauthenticated", "Must be signed in");
+export const recordSessionEnd = functions.https.onCall(async (reqData, context) => {
+  if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "Must be signed in");
 
-  const uid = request.auth.uid;
-  const { xpEarned } = request.data as {
+  const uid = context.auth.uid;
+  const { xpEarned } = reqData as {
     xpEarned: number;
     sessionType: string;
   };
@@ -258,11 +261,11 @@ export const recordSessionEnd = functions.https.onCall(async (request) => {
 
 // ── HTTPS Callable: Update Memory Verse (SM-2) ────────────────────────────────
 
-export const updateMemoryVerse = functions.https.onCall(async (request) => {
-  if (!request.auth) throw new functions.https.HttpsError("unauthenticated", "Must be signed in");
+export const updateMemoryVerse = functions.https.onCall(async (reqData, context) => {
+  if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "Must be signed in");
 
-  const uid = request.auth.uid;
-  const { verseId, percentCorrect } = request.data as {
+  const uid = context.auth.uid;
+  const { verseId, percentCorrect } = reqData as {
     verseId: string;
     percentCorrect: number;
   };
@@ -304,11 +307,11 @@ export const updateMemoryVerse = functions.https.onCall(async (request) => {
 
 // ── HTTPS Callable: Register FCM Token ───────────────────────────────────────
 
-export const registerFcmToken = functions.https.onCall(async (request) => {
-  if (!request.auth) throw new functions.https.HttpsError("unauthenticated", "Must be signed in");
+export const registerFcmToken = functions.https.onCall(async (reqData, context) => {
+  if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "Must be signed in");
 
-  const uid = request.auth.uid;
-  const { token } = request.data as { token: string };
+  const uid = context.auth.uid;
+  const { token } = reqData as { token: string };
 
   await db.collection("users").doc(uid).collection("fcmTokens").doc(token).set({
     token,
@@ -449,6 +452,38 @@ export const onBadgeEarned = functions.firestore
       );
     }
     await Promise.all(writes);
+  });
+
+/**
+ * When a memory verse is added, award first_verse / ten_verses badges.
+ */
+export const onMemoryVerseAdded = functions.firestore
+  .document("memoryVerses/{uid}/verses/{verseId}")
+  .onCreate(async (_snap, context) => {
+    const uid = context.params.uid;
+
+    const versesSnap = await db
+      .collection("memoryVerses")
+      .doc(uid)
+      .collection("verses")
+      .get();
+    const count = versesSnap.size;
+
+    const badgeId = count === 1 ? "first_verse" : count === 10 ? "ten_verses" : null;
+    if (!badgeId) return;
+
+    const badgeRef = db.collection("badges").doc(uid).collection("earned").doc(badgeId);
+    const existing = await badgeRef.get();
+    if (existing.exists) return; // already earned
+
+    const userSnap = await db.collection("users").doc(uid).get();
+    const xp = (userSnap.data()?.profile?.xp as number) ?? 0;
+
+    await badgeRef.set({
+      earnedAt: admin.firestore.FieldValue.serverTimestamp(),
+      name: badgeId === "first_verse" ? "First Verse" : "Ten Verses",
+      xpAtEarning: xp,
+    });
   });
 
 /**
@@ -612,8 +647,8 @@ function getTodaysPassages(date: Date = new Date()): Array<{ id: string; text: s
 }
 
 // ── HTTPS Callable: Word Study ────────────────────────────────────────────────
-export const getWordStudy = functions.https.onCall(async (request) => {
-  const raw = (request as any).data ?? request ?? {};
+export const getWordStudy = functions.https.onCall(async (reqData, _context) => {
+  const raw = reqData ?? {};
   const { word, verseRef, verseText } = raw;
 
   const client = getClaudeClient();
@@ -647,12 +682,67 @@ Return ONLY this JSON:
 });
 
 // ── HTTPS Callable: Ask Verse Question ───────────────────────────────────────
-export const askVerseQuestion = functions.https.onCall(async (request) => {
-  const raw = (request as any).data ?? request ?? {};
+const FREE_AI_DAILY_LIMIT = 3;
+
+/**
+ * Returns YYYY-MM-DD in UTC — used as the Firestore doc key for daily usage.
+ */
+function todayKey(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/**
+ * Atomically increments the user's daily AI usage counter.
+ * Returns { allowed: true, remaining } or { allowed: false, remaining: 0 }.
+ * isPremium is read from Firestore — never trusted from the client.
+ */
+async function checkAndIncrementAiUsage(
+  uid: string
+): Promise<{ allowed: boolean; remaining: number }> {
+  // Server-side isPremium check — ignore any value the client sends
+  const userSnap = await db.collection("users").doc(uid).get();
+  const isPremium = userSnap.data()?.profile?.isPremium === true;
+  if (isPremium) return { allowed: true, remaining: 999 };
+
+  const ref = db
+    .collection("users")
+    .doc(uid)
+    .collection("aiUsage")
+    .doc(todayKey());
+
+  // Atomic increment + read in a transaction
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const current: number = snap.exists ? (snap.data()?.count ?? 0) : 0;
+
+    if (current >= FREE_AI_DAILY_LIMIT) {
+      return { allowed: false, remaining: 0 };
+    }
+
+    tx.set(ref, { count: current + 1, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+    return { allowed: true, remaining: FREE_AI_DAILY_LIMIT - (current + 1) };
+  });
+}
+
+export const askVerseQuestion = functions.https.onCall(async (reqData, context) => {
+  const raw = reqData ?? {};
   const { verseRef, verseText, question } = raw;
 
   if (!verseRef || !question) {
     throw new functions.https.HttpsError("invalid-argument", "Missing verseRef or question");
+  }
+
+  // Require auth
+  const uid = context.auth?.uid;
+  if (!uid) {
+    throw new functions.https.HttpsError("unauthenticated", "Must be signed in");
+  }
+
+  // Rate-limit free users (isPremium verified server-side inside this function)
+  const usage = await checkAndIncrementAiUsage(uid);
+  if (!usage.allowed) {
+    // Return a structured error the client can handle gracefully
+    return { error: "limit_reached", remaining: 0, limit: FREE_AI_DAILY_LIMIT };
   }
 
   const client = getClaudeClient();
@@ -667,5 +757,314 @@ export const askVerseQuestion = functions.https.onCall(async (request) => {
   });
 
   const answer = (response.content[0] as any).text;
-  return { answer };
+  return { answer, remaining: usage.remaining };
+});
+
+/**
+ * Premium: Greek / Hebrew word study for a verse.
+ * Identifies 3-5 key original-language terms, returns transliteration,
+ * Strong's number, literal meaning, and a plain-English insight.
+ */
+export const getVerseWordStudy = functions.https.onCall(async (reqData, context) => {
+  const raw = reqData ?? {};
+  const { verseRef, verseText } = raw;
+
+  if (!verseRef || !verseText) {
+    throw new functions.https.HttpsError("invalid-argument", "Missing verseRef or verseText");
+  }
+
+  // Require auth
+  const uid = context.auth?.uid;
+  if (!uid) {
+    throw new functions.https.HttpsError("unauthenticated", "Must be signed in");
+  }
+
+  // Word study counts against the daily limit (isPremium verified server-side)
+  const usage = await checkAndIncrementAiUsage(uid);
+  if (!usage.allowed) {
+    return { error: "limit_reached", remaining: 0, limit: FREE_AI_DAILY_LIMIT };
+  }
+
+  // Determine testament from book abbreviation or reference
+  // NT books start with: matt, mar, luke, joh, act, rom, 1co, 2co, gal, eph,
+  // php, col, 1th, 2th, 1ti, 2ti, tit, phm, heb, jas, 1pe, 2pe, 1jo, 2jo,
+  // 3jo, jude, rev
+  const refLower = verseRef.toLowerCase();
+  const ntPrefixes = ["matt","mar","luke","joh","act","rom","1co","2co","gal",
+    "eph","php","col","1th","2th","1ti","2ti","tit","phm","heb","jas","1pe",
+    "2pe","1jo","2jo","3jo","jude","rev"];
+  const isNT = ntPrefixes.some((p) => refLower.startsWith(p));
+  const lang = isNT ? "Greek (Koine)" : "Hebrew";
+
+  const client = getClaudeClient();
+  const response = await client.messages.create({
+    model: MODELS.haiku,
+    max_tokens: 600,
+    system: `You are a Biblical language scholar. When given a verse, identify 3-5 key ${lang} words
+that unlock deeper meaning. For each word give:
+- The English word from the verse
+- Original ${lang} word (with transliteration)
+- Strong's number
+- Literal meaning
+- One sentence on why it matters
+
+Format your response as plain readable text (not JSON), using this pattern for each word:
+
+**[English word]** — [Original word] ([transliteration], Strong's #XXXX)
+Literal: [literal meaning]
+Why it matters: [one warm, accessible sentence]
+
+Keep the total response under 500 words. Warm, non-intimidating tone.`,
+    messages: [{
+      role: "user",
+      content: `${verseRef}: "${verseText}"`
+    }]
+  });
+
+  const answer = (response.content[0] as any).text;
+  return { answer, remaining: usage.remaining };
+});
+
+/**
+ * Retroactively checks and awards verse-count badges the onCreate trigger may
+ * have missed (e.g. verses added before function was deployed).
+ * Safe to call multiple times — skips already-earned badges.
+ */
+export const checkVerseBadges = functions.https.onCall(async (_reqData, context) => {
+  if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "Must be signed in");
+  const uid = context.auth.uid;
+
+  const versesSnap = await db
+    .collection("memoryVerses")
+    .doc(uid)
+    .collection("verses")
+    .get();
+  const count = versesSnap.size;
+
+  const badgesToCheck: Array<{ id: string; name: string; threshold: number }> = [
+    { id: "first_verse", name: "First Verse", threshold: 1 },
+    { id: "ten_verses",  name: "Ten Verses",  threshold: 10 },
+  ];
+
+  const awarded: string[] = [];
+
+  for (const badge of badgesToCheck) {
+    if (count < badge.threshold) continue;
+    const ref = db.collection("badges").doc(uid).collection("earned").doc(badge.id);
+    const snap = await ref.get();
+    if (snap.exists) continue; // already earned
+
+    const userSnap = await db.collection("users").doc(uid).get();
+    const xp = (userSnap.data()?.profile?.xp as number) ?? 0;
+    await ref.set({
+      earnedAt: admin.firestore.FieldValue.serverTimestamp(),
+      name: badge.name,
+      xpAtEarning: xp,
+    });
+    awarded.push(badge.id);
+  }
+
+  return { awarded, verseCount: count };
+});
+
+// ── HTTPS Callable: Search Verses ────────────────────────────────────────────
+
+/**
+ * Full-text keyword search across all Bible verses for a given version.
+ * Uses collectionGroup('verses') + server-side JS includes() filtering since
+ * Firestore does not support native substring/full-text search.
+ *
+ * Input:  { version: string, query: string }
+ * Output: { results: Array<{ book, chapter, verse, reference, text }> }
+ */
+export const searchVerses = functions
+  .runWith({ timeoutSeconds: 30, memory: "256MB" })
+  .https.onCall(async (reqData, _context) => {
+    const raw = (reqData ?? {}) as { version?: string; query?: string };
+    const version = (raw.version ?? "kjv").trim().toLowerCase();
+    const query = (raw.query ?? "").trim().toLowerCase();
+
+    if (query.length < 3) {
+      throw new functions.https.HttpsError("invalid-argument", "Query must be at least 3 characters");
+    }
+
+    const pathPrefix = `bible/${version}/`;
+
+    // Fetch up to 5 000 verse documents across ALL nested verse collections.
+    // We filter by path to isolate the requested version, then by text containment.
+    const snap = await db
+      .collectionGroup("verses")
+      .limit(5000)
+      .get();
+
+    const results: Array<{
+      book: string;
+      chapter: number;
+      verse: number;
+      reference: string;
+      text: string;
+    }> = [];
+
+    for (const doc of snap.docs) {
+      // Only include docs belonging to the requested version
+      if (!doc.ref.path.startsWith(pathPrefix)) continue;
+
+      const data = doc.data();
+      const text: string = data.text ?? data.verseText ?? "";
+      if (!text.toLowerCase().includes(query)) continue;
+
+      // Path: bible/{version}/books/{book}/chapters/{chapter}/verses/{id}
+      const segments = doc.ref.path.split("/");
+      const book = segments[3] ?? data.bookId ?? "";
+      const chapter = data.chapterNumber ?? parseInt(segments[5] ?? "0", 10);
+      const verse = data.verseNumber ?? 0;
+      const reference = data.reference ?? `${book} ${chapter}:${verse}`;
+
+      results.push({ book, chapter, verse, reference, text });
+      if (results.length >= 30) break;
+    }
+
+    return { results };
+  });
+
+// ── HTTPS Callable: Interpret Verse ──────────────────────────────────────────
+
+export const interpretVerse = functions.https.onCall(async (reqData, context) => {
+  const raw = reqData ?? {};
+  const { verseRef, verseText } = raw as { verseRef: string; verseText: string };
+
+  if (!verseRef || !verseText) {
+    throw new functions.https.HttpsError("invalid-argument", "Missing verseRef or verseText");
+  }
+
+  const uid = context.auth?.uid;
+  if (!uid) {
+    throw new functions.https.HttpsError("unauthenticated", "Must be signed in");
+  }
+
+  const usage = await checkAndIncrementAiUsage(uid);
+  if (!usage.allowed) {
+    return { error: "limit_reached", remaining: 0, limit: FREE_AI_DAILY_LIMIT };
+  }
+
+  // Fetch user study level for tone calibration
+  const userSnap = await db.collection("users").doc(uid).get();
+  const studyLevel: StudyLevel = (userSnap.data()?.profile?.studyLevel as StudyLevel) ?? "growing";
+  const levelInstructions = studyLevelInstructions(studyLevel);
+
+  const client = getClaudeClient();
+  const response = await client.messages.create({
+    model: MODELS.haiku,
+    max_tokens: 600,
+    system: `You are a Bible study assistant for Joshua's Crossing, a Christian church in Denison, TX.
+Interpret Scripture through the lens of these core beliefs:
+- The Bible is the infallible, Holy Spirit-inspired Word of God and the sole foundation for faith and practice.
+- God is the all-powerful, all-knowing, personal, and loving Creator of the Universe.
+- Jesus is God incarnate — fully God and fully man — who lived a perfect life, died on the cross for the sins of the world, rose on the third day, ascended to Heaven, and is coming back.
+- Salvation comes by trusting in Jesus as Lord; every person is sinful by nature and entry to Heaven is through faith in Christ alone.
+- Baptism by full immersion is a public declaration of faith, not a requirement for salvation.
+- The Church is the bride of Christ; every believer needs a church community.
+- At death, every person goes to one of two eternal destinations: Heaven (with God) or Hell (apart from Him).
+Give a concise verse interpretation (3-5 sentences) covering: (1) the plain meaning, (2) theological significance, (3) a brief application.
+${levelInstructions}
+Be warm, clear, and encouraging.`,
+    messages: [{
+      role: "user",
+      content: `Interpret this verse:\n\n${verseRef} — "${verseText}"`
+    }]
+  });
+
+  const answer = (response.content[0] as { type: "text"; text: string }).text;
+  return { answer, remaining: usage.remaining };
+});
+
+// ── HTTPS Callable: Deep Study ────────────────────────────────────────────────
+
+export const deepStudyVerse = functions.https.onCall(async (reqData, context) => {
+  const raw = reqData ?? {};
+  const { verseRef, verseText } = raw as { verseRef: string; verseText: string };
+
+  if (!verseRef || !verseText) {
+    throw new functions.https.HttpsError("invalid-argument", "Missing verseRef or verseText");
+  }
+
+  const uid = context.auth?.uid;
+  if (!uid) throw new functions.https.HttpsError("unauthenticated", "Must be signed in");
+
+  const usage = await checkAndIncrementAiUsage(uid);
+  if (!usage.allowed) {
+    return { error: "limit_reached", remaining: 0, limit: FREE_AI_DAILY_LIMIT };
+  }
+
+  const userSnap = await db.collection("users").doc(uid).get();
+  const studyLevel: StudyLevel = (userSnap.data()?.profile?.studyLevel as StudyLevel) ?? "growing";
+  const levelInstructions = studyLevelInstructions(studyLevel);
+
+  // Determine language (Greek for NT, Hebrew for OT)
+  const refLower = verseRef.toLowerCase();
+  const ntPrefixes = ["matt","mar","luke","joh","act","rom","1co","2co","gal",
+    "eph","php","col","1th","2th","1ti","2ti","tit","phm","heb","jas","1pe",
+    "2pe","1jo","2jo","3jo","jude","rev"];
+  const lang = ntPrefixes.some((p) => refLower.startsWith(p)) ? "Greek (Koine)" : "Hebrew";
+
+  const client = getClaudeClient();
+  const response = await client.messages.create({
+    model: MODELS.haiku,
+    max_tokens: 2000,
+    system: `You are a Bible scholar for Joshua's Crossing, a Christian church in Denison, TX.
+Ground all study content in these core beliefs:
+- The Bible is the infallible, Holy Spirit-inspired Word of God — the only foundation for faith and practice.
+- God is the all-powerful, all-knowing, personal, and loving Creator.
+- Jesus is God incarnate — fully God and fully man — who died for the sins of the world, rose on the third day, ascended to Heaven, and is returning.
+- Salvation is by faith in Jesus as Lord alone; humans are sinful by nature and cannot earn Heaven.
+- Baptism by full immersion is a public declaration of new faith, not a requirement for salvation.
+- The Church is the bride of Christ; community with other believers is essential.
+- Eternity is real: Heaven for those who trust in Jesus, Hell for those who do not.
+${levelInstructions}
+Always respond with valid JSON only — no markdown fences, no extra text.`,
+    messages: [{
+      role: "user",
+      content: `Generate a deep Bible study for this passage:
+
+${verseRef}: "${verseText}"
+Original language: ${lang}
+
+Return ONLY this JSON structure:
+{
+  "verseClarity": {
+    "context": "2-4 sentences explaining the historical, narrative, or literary context of this verse — who wrote it, to whom, and what was happening",
+    "meaning": "3-5 sentences on the theological meaning of this specific verse — what it says about God, humanity, or salvation. Reference other parts of Scripture where helpful."
+  },
+  "wordStudy": [
+    {
+      "word": "English word from the verse",
+      "originalWord": "${lang} word (use actual script if possible)",
+      "transliteration": "phonetic transliteration",
+      "strongsNumber": "H#### or G####",
+      "definition": "1-2 sentence definition of the original word's core meaning",
+      "scholarsInsight": "2-3 sentences connecting the word's original meaning to the theological significance in this passage"
+    }
+  ],
+  "theologicalInsight": {
+    "title": "Short doctrine or theme title (e.g. 'Providence: God's Sovereign Care')",
+    "body": "3-4 sentences explaining the key theological doctrine or insight this verse teaches, grounded in the belief that Scripture is infallible, Jesus is the only path to salvation, and God is personal and loving",
+    "scripturalSupport": [
+      { "reference": "Book X:Y", "note": "One sentence on how this verse supports the insight" },
+      { "reference": "Book X:Y", "note": "One sentence on how this verse supports the insight" },
+      { "reference": "Book X:Y", "note": "One sentence on how this verse supports the insight" }
+    ],
+    "intellectualTakeaway": "One crisp sentence summarizing the deepest intellectual/theological takeaway from this verse"
+  }
+}
+
+Include 2-4 key words in wordStudy. Pick the most theologically significant words.`
+    }]
+  });
+
+  const raw2 = (response.content[0] as { type: "text"; text: string }).text.trim();
+  const cleaned = raw2.replace(/^```json\n?/, "").replace(/^```\n?/, "").replace(/\n?```$/, "").trim();
+  const start = cleaned.indexOf('{');
+  const end = cleaned.lastIndexOf('}');
+  const parsed = JSON.parse(cleaned.substring(start, end + 1));
+  return { ...parsed, remaining: usage.remaining };
 });

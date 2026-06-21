@@ -16,12 +16,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/colors.dart';
 import '../../core/constants/typography.dart';
 import '../../core/constants/xp_rewards.dart';
+import '../../core/walkthrough/walkthrough_keys.dart';
 import '../../models/user_profile.dart';
 import '../../models/memory_verse.dart';
 import '../../widgets/common/progress_bar.dart';
+import '../../widgets/common/premium_gate.dart';
 import '../../widgets/gamification/xp_burst.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../../core/services/auth_service.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import '../memory_verse/memory_verse_screen.dart';
 
 class ProfileScreen extends ConsumerWidget {
@@ -76,9 +78,16 @@ class ProfileScreen extends ConsumerWidget {
           ),
           SliverToBoxAdapter(
             child: _StatsRow(
+              key: WalkthroughKeys.profileHero,
               currentStreak: streak,
               longestStreak: profile?.longestStreak ?? 0,
               totalStudyDays: profile?.totalStudyDays ?? 0,
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: _StreakFreezeBanner(
+              isPremium: profile?.isPremium ?? false,
+              freezeCount: profile?.streakFreezeCount ?? 0,
             ),
           ),
           const SliverToBoxAdapter(child: _SectionDivider()),
@@ -87,7 +96,7 @@ class ProfileScreen extends ConsumerWidget {
           ),
           const SliverToBoxAdapter(child: _SectionDivider()),
           SliverToBoxAdapter(
-            child: _BadgesGrid(),
+            child: _BadgesGrid(key: WalkthroughKeys.profileBadges),
           ),
           const SliverToBoxAdapter(child: _SectionDivider()),
           SliverToBoxAdapter(
@@ -95,7 +104,16 @@ class ProfileScreen extends ConsumerWidget {
           ),
           const SliverToBoxAdapter(child: _SectionDivider()),
           SliverToBoxAdapter(
-            child: _VerseVaultSection(uid: FirebaseAuth.instance.currentUser?.uid ?? ''),
+            child: _VerseVaultSection(
+              key: WalkthroughKeys.profileVerseVault,
+              uid: FirebaseAuth.instance.currentUser?.uid ?? '',
+            ),
+          ),
+          const SliverToBoxAdapter(child: _SectionDivider()),
+          SliverToBoxAdapter(
+            child: _NotesSection(
+              uid: FirebaseAuth.instance.currentUser?.uid ?? '',
+            ),
           ),
           const SliverToBoxAdapter(child: SizedBox(height: 80)),
         ],
@@ -288,7 +306,7 @@ void showSettingsSheet(BuildContext context, dynamic profile) {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) => Padding(
+      builder: (sheetContext) => Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -300,9 +318,13 @@ void showSettingsSheet(BuildContext context, dynamic profile) {
               leading: const Icon(Icons.person_outline, color: Colors.white70),
               title: const Text('Edit Profile', style: TextStyle(color: Colors.white)),
               trailing: const Icon(Icons.chevron_right, color: Colors.white38),
-              onTap: () {
-                Navigator.pop(context);
-                context.push('/profile/settings', extra: {'profile': profile});
+              onTap: () async {
+                Navigator.pop(sheetContext);
+                // Yield a frame so the sheet pop fully flushes before pushing.
+                await Future<void>.delayed(Duration.zero);
+                if (context.mounted) {
+                  context.push('/profile/settings', extra: {'profile': profile});
+                }
               },
             ),
             ListTile(
@@ -327,7 +349,7 @@ void showSettingsSheet(BuildContext context, dynamic profile) {
               title: const Text('Export Journal as PDF', style: TextStyle(color: Colors.white)),
               trailing: const Icon(Icons.chevron_right, color: Colors.white38),
               onTap: () {
-                Navigator.pop(context);
+                Navigator.pop(sheetContext);
                 _exportPdf(context);
               },
             ),
@@ -351,6 +373,7 @@ class _StatsRow extends StatelessWidget {
   final int totalStudyDays;
 
   const _StatsRow({
+    super.key,
     required this.currentStreak,
     required this.longestStreak,
     required this.totalStudyDays,
@@ -557,6 +580,8 @@ class _BookGrid extends StatelessWidget {
 }
 
 class _BadgesGrid extends StatefulWidget {
+  const _BadgesGrid({super.key});
+
   @override
   State<_BadgesGrid> createState() => _BadgesGridState();
 }
@@ -719,8 +744,7 @@ class _StudyStatsState extends State<_StudyStats> {
     try {
       final results = await Future.wait([
         db.collection('journal').doc(uid).collection('entries').get(),
-        db.collection('memoryVerses').doc(uid).collection('verses')
-            .where('mastered', isEqualTo: true).get(),
+        db.collection('memoryVerses').doc(uid).collection('verses').get(),
         db.collection('users').doc(uid).get(),
       ]);
 
@@ -739,6 +763,14 @@ class _StudyStatsState extends State<_StudyStats> {
           _versesRead = (profile['versesRead'] as num?)?.toInt() ?? 0;
           _loading = false;
         });
+      }
+
+      // Retroactively award any verse badges the onCreate trigger may have missed.
+      if (masteredCount > 0) {
+        FirebaseFunctions.instanceFor(region: 'us-central1')
+            .httpsCallable('checkVerseBadges')
+            .call()
+            .ignore();
       }
     } catch (_) {
       if (mounted) setState(() => _loading = false);
@@ -855,7 +887,7 @@ class _FocusCompanionToggleState extends State<_FocusCompanionToggle> {
 
 class _VerseVaultSection extends StatelessWidget {
   final String uid;
-  const _VerseVaultSection({required this.uid});
+  const _VerseVaultSection({super.key, required this.uid});
 
   @override
   Widget build(BuildContext context) {
@@ -928,11 +960,53 @@ class _VerseVaultSection extends StatelessWidget {
                 );
               }
               return Column(
-                children: verses.map((v) => _VaultVerseRow(
-                  verse: v,
-                  onTap: () => Navigator.of(context, rootNavigator: true).push(
-                    MaterialPageRoute(
-                      builder: (_) => MemoryVerseScreen(verse: v, uid: uid),
+                children: verses.map((v) => Dismissible(
+                  key: ValueKey(v.id),
+                  direction: DismissDirection.endToStart,
+                  background: Container(
+                    alignment: Alignment.centerRight,
+                    padding: const EdgeInsets.only(right: 20),
+                    margin: const EdgeInsets.only(bottom: 8),
+                    decoration: BoxDecoration(
+                      color: AppColors.error,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.delete_outline, color: Colors.white),
+                  ),
+                  confirmDismiss: (_) async {
+                    return await showDialog<bool>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        backgroundColor: AppColors.cardDark,
+                        title: const Text('Remove verse?'),
+                        content: Text('Remove ${v.reference} from your Vault?'),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx, false),
+                            child: const Text('Cancel'),
+                          ),
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx, true),
+                            child: Text('Remove', style: TextStyle(color: AppColors.error)),
+                          ),
+                        ],
+                      ),
+                    ) ?? false;
+                  },
+                  onDismissed: (_) {
+                    FirebaseFirestore.instance
+                        .collection('memoryVerses')
+                        .doc(uid)
+                        .collection('verses')
+                        .doc(v.id)
+                        .delete();
+                  },
+                  child: _VaultVerseRow(
+                    verse: v,
+                    onTap: () => Navigator.of(context, rootNavigator: true).push(
+                      MaterialPageRoute(
+                        builder: (_) => MemoryVerseScreen(verse: v, uid: uid),
+                      ),
                     ),
                   ),
                 )).toList(),
@@ -953,6 +1027,144 @@ class _VerseVaultSection extends StatelessWidget {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (_) => _AddVerseSheet(uid: uid),
+    );
+  }
+}
+
+// ── Notes Section ─────────────────────────────────────────────────────────────
+
+class _NotesSection extends StatelessWidget {
+  final String uid;
+  const _NotesSection({required this.uid});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Text('📝', style: TextStyle(fontSize: 18)),
+              const SizedBox(width: 8),
+              const Text('My Notes', style: AppTypography.labelLarge),
+              const Spacer(),
+              TextButton(
+                onPressed: () => context.push('/notes'),
+                child: Text(
+                  'View All',
+                  style: AppTypography.bodySmall.copyWith(color: AppColors.warmGold),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('journal')
+                .doc(uid)
+                .collection('entries')
+                .orderBy('updatedAt', descending: true)
+                .limit(3)
+                .snapshots(),
+            builder: (ctx, snap) {
+              if (snap.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator(color: AppColors.warmGold));
+              }
+              final docs = snap.data?.docs ?? [];
+              if (docs.isEmpty) {
+                return GestureDetector(
+                  onTap: () => context.push('/notes'),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 24),
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      children: [
+                        const Text('📝', style: TextStyle(fontSize: 28)),
+                        const SizedBox(height: 8),
+                        Text(
+                          'No notes yet',
+                          style: AppTypography.labelSmall.copyWith(color: AppColors.warmGold),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Tap to add your first note',
+                          style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }
+              return Column(
+                children: [
+                  ...docs.map((doc) {
+                    final data = doc.data() as Map<String, dynamic>;
+                    final title = data['title'] as String? ?? '';
+                    final passage = data['passage'] as String? ?? '';
+                    final content = data['content'] as String? ?? '';
+                    final label = passage.isNotEmpty ? passage : title;
+                    return GestureDetector(
+                      onTap: () => context.push('/notes'),
+                      child: Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: AppColors.cardDark,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: AppColors.surface),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  if (label.isNotEmpty)
+                                    Text(
+                                      label,
+                                      style: AppTypography.labelSmall.copyWith(color: AppColors.warmGold),
+                                    ),
+                                  if (label.isNotEmpty) const SizedBox(height: 4),
+                                  Text(
+                                    content,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: AppTypography.bodySmall.copyWith(color: AppColors.warmWhite.withOpacity(0.85)),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const Icon(Icons.chevron_right, size: 16, color: AppColors.textSecondary),
+                          ],
+                        ),
+                      ),
+                    );
+                  }),
+                  const SizedBox(height: 4),
+                  SizedBox(
+                    width: double.infinity,
+                    child: TextButton(
+                      onPressed: () => context.push('/notes'),
+                      child: Text(
+                        'See all notes →',
+                        style: AppTypography.bodySmall.copyWith(color: AppColors.warmGold),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1194,6 +1406,84 @@ class _AddVerseSheetState extends State<_AddVerseSheet> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ── Streak Freeze Banner ──────────────────────────────────────────────────────
+
+class _StreakFreezeBanner extends StatelessWidget {
+  final bool isPremium;
+  final int freezeCount;
+
+  const _StreakFreezeBanner({required this.isPremium, required this.freezeCount});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: GestureDetector(
+        onTap: isPremium
+            ? null // premium users just see their count; freeze is auto-applied
+            : () => showPaywallSheet(context, featureName: 'Streak Freeze'),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: isPremium
+                ? AppColors.surface
+                : AppColors.warmGold.withOpacity(0.06),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: isPremium
+                  ? AppColors.surface
+                  : AppColors.warmGold.withOpacity(0.4),
+            ),
+          ),
+          child: Row(
+            children: [
+              const Text('🧊', style: TextStyle(fontSize: 22)),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isPremium ? 'Streak Freeze' : 'Streak Freeze — Premium',
+                      style: AppTypography.labelMedium.copyWith(
+                        color: isPremium ? AppColors.warmWhite : AppColors.warmGold,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      isPremium
+                          ? (freezeCount > 0
+                              ? '$freezeCount freeze${freezeCount == 1 ? "" : "s"} available — auto-applied if you miss a day'
+                              : 'No freezes remaining — keep your streak alive!')
+                          : 'Protects your streak for up to 3 days when life gets busy',
+                      style: AppTypography.bodySmall.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (!isPremium)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AppColors.warmGold,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text('PRO',
+                      style: TextStyle(
+                          color: Colors.black,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold)),
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }

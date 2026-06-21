@@ -9,6 +9,7 @@ import '../../core/constants/typography.dart';
 import '../../core/constants/xp_rewards.dart';
 import '../../core/services/xp_service.dart';
 import '../../widgets/common/flame_cta_button.dart';
+import '../../widgets/common/premium_gate.dart';
 import '../../widgets/gamification/xp_burst.dart';
 import '../../app.dart';
 
@@ -80,6 +81,7 @@ class _AiStudyScreenState extends ConsumerState<AiStudyScreen> {
   int _burstXp = 0;
   bool _completed = false;
   bool _contextExpanded = false;
+  bool _loadStarted = false;
 
   final _xpService = XpService();
 
@@ -90,9 +92,10 @@ class _AiStudyScreenState extends ConsumerState<AiStudyScreen> {
       _data = widget.preloaded;
       _loading = false;
       _answers.addAll(List.filled(_data!.questions.length, ''));
-    } else {
-      _loadStudy();
     }
+    // _loadStudy() is triggered lazily from build() only after isPremium is
+    // confirmed — prevents a wasted Cloud Function call for free users who hit
+    // the paywall before any data loads.
   }
 
   @override
@@ -238,6 +241,21 @@ class _AiStudyScreenState extends ConsumerState<AiStudyScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Premium gate — read profile from Riverpod (already available app-wide)
+    final profile = ref.watch(currentProfileProvider).valueOrNull;
+    final isPremium = profile?.isPremium ?? false;
+    if (!isPremium) {
+      return _AiStudyPaywall(onBack: () => Navigator.maybePop(context));
+    }
+
+    // Trigger load now that we've confirmed premium — only fires once.
+    if (_loading && !_loadStarted && widget.preloaded == null) {
+      _loadStarted = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _loadStudy();
+      });
+    }
+
     if (_loading) {
       return Scaffold(
         backgroundColor: AppColors.deepSlate,
@@ -593,6 +611,60 @@ class _CompletionView extends StatelessWidget {
           const SizedBox(height: 48),
           FlameCTAButton(label: 'Done', onPressed: onDone),
         ],
+      ),
+    );
+  }
+}
+
+// ── Premium paywall for AI Study Screen ──────────────────────────────────────
+
+class _AiStudyPaywall extends StatelessWidget {
+  final VoidCallback onBack;
+  const _AiStudyPaywall({required this.onBack});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.deepSlate,
+      appBar: AppBar(
+        backgroundColor: AppColors.deepSlate,
+        leading: BackButton(onPressed: onBack),
+        title: const Text('AI Study Mode'),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(28),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Text('🤖', style: TextStyle(fontSize: 64)),
+            const SizedBox(height: 24),
+            const Text('AI Study Mode', style: AppTypography.displaySmall, textAlign: TextAlign.center),
+            const SizedBox(height: 12),
+            Text(
+              'Get AI-generated study questions, historical context, cross-references, and a personal devotional prompt for any passage.',
+              style: AppTypography.bodyMedium.copyWith(color: AppColors.textSecondary),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '\$3.99/month · \$29.99/year · \$19.99 student',
+              style: AppTypography.labelSmall.copyWith(color: AppColors.warmGold),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 40),
+            FlameCTAButton(
+              label: 'Unlock Premium — \$3.99/mo',
+              onPressed: () {
+                // TODO: RevenueCat.presentPaywall()
+              },
+            ),
+            const SizedBox(height: 12),
+            TextButton(
+              onPressed: onBack,
+              child: Text('Not now', style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary)),
+            ),
+          ],
+        ),
       ),
     );
   }

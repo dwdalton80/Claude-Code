@@ -9,6 +9,7 @@ import 'core/theme/app_theme.dart';
 import 'core/constants/colors.dart';
 import 'core/constants/typography.dart';
 import 'core/services/firestore_service.dart';
+import 'core/walkthrough/walkthrough_service.dart';
 import 'models/user_profile.dart';
 import 'screens/onboarding/onboarding_screen.dart';
 import 'screens/quest/quest_screen.dart';
@@ -20,6 +21,7 @@ import 'screens/journal/journal_screen.dart';
 import 'screens/groups/groups_screen.dart';
 import 'screens/settings/settings_screen.dart';
 import 'screens/profile/profile_screen.dart';
+import 'widgets/walkthrough/walkthrough_scope.dart';
 
 // ── Providers ─────────────────────────────────────────────────────────────────
 
@@ -85,6 +87,7 @@ final routerProvider = Provider<GoRouter>((ref) {
                 chapter: extra?['chapter'] as int?,
                 startVerse: extra?['startVerse'] as int?,
                 explicitVersion: extra?['version'] as String?,
+                isPremium: extra?['isPremium'] as bool? ?? false,
               );
             },
           ),
@@ -191,36 +194,65 @@ class StudyFireApp extends ConsumerWidget {
       themeMode: ThemeMode.dark,
       routerConfig: router,
       debugShowCheckedModeBanner: false,
+      builder: (context, child) => GestureDetector(
+        onTap: () => FocusScope.of(context).unfocus(),
+        behavior: HitTestBehavior.opaque,
+        child: child!,
+      ),
     );
   }
 }
 
 // ── App Shell (Bottom Nav) ────────────────────────────────────────────────────
 
-class AppShell extends StatelessWidget {
+class AppShell extends ConsumerStatefulWidget {
   final Widget child;
   const AppShell({super.key, required this.child});
 
   static const _tabs = [
-    (path: '/quest', label: 'Quest', icon: Icons.flash_on),
-    (path: '/reader', label: 'Reader', icon: Icons.menu_book),
-    (path: '/games', label: 'Games', icon: Icons.psychology),
-    (path: '/notes', label: 'Study', icon: Icons.sticky_note_2),
-    (path: '/groups', label: 'Groups', icon: Icons.group),
+    (path: '/quest',   label: 'Quest',   icon: Icons.flash_on),
+    (path: '/groups',  label: 'Groups',  icon: Icons.group),
+    (path: '/games',   label: 'Games',   icon: Icons.psychology),
+    (path: '/reader',  label: 'Reader',  icon: Icons.menu_book),
     (path: '/profile', label: 'Profile', icon: Icons.person),
   ];
 
   @override
+  ConsumerState<AppShell> createState() => _AppShellState();
+}
+
+class _AppShellState extends ConsumerState<AppShell> {
+  bool _walkthroughTriggered = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Slight delay so the first screen finishes rendering before we
+    // try to read GlobalKey positions.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_walkthroughTriggered && mounted) {
+        _walkthroughTriggered = true;
+        Future.delayed(const Duration(milliseconds: 600), () {
+          if (mounted) {
+            ref.read(walkthroughProvider.notifier).maybeStart();
+          }
+        });
+      }
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final location = GoRouterState.of(context).matchedLocation;
-    final currentIndex = _tabs.indexWhere((t) => location.startsWith(t.path));
+    final currentIndex =
+        AppShell._tabs.indexWhere((t) => location.startsWith(t.path));
 
     return Scaffold(
-      body: child,
+      body: WalkthroughScope(child: widget.child),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: currentIndex < 0 ? 0 : currentIndex,
-        onTap: (i) => context.go(_tabs[i].path),
-        items: _tabs
+        onTap: (i) => context.go(AppShell._tabs[i].path),
+        items: AppShell._tabs
             .map((t) => BottomNavigationBarItem(
                   icon: Icon(t.icon),
                   label: t.label,
@@ -290,6 +322,7 @@ class _ReaderWrapper extends ConsumerStatefulWidget {
   final int? chapter;       // null = restore last position
   final int? startVerse;
   final String? explicitVersion;
+  final bool isPremium;
 
   const _ReaderWrapper({
     required this.uid,
@@ -297,6 +330,7 @@ class _ReaderWrapper extends ConsumerStatefulWidget {
     this.chapter,
     this.startVerse,
     this.explicitVersion,
+    this.isPremium = false,
   });
 
   @override
@@ -347,6 +381,7 @@ class _ReaderWrapperState extends ConsumerState<_ReaderWrapper> {
     final version = widget.explicitVersion
         ?? profileAsync.valueOrNull?.defaultVersion.name
         ?? 'kjv';
+    final isPremium = widget.isPremium || (profileAsync.valueOrNull?.isPremium ?? false);
 
     return ReaderScreen(
       uid: widget.uid,
@@ -354,6 +389,7 @@ class _ReaderWrapperState extends ConsumerState<_ReaderWrapper> {
       chapter: _resolvedChapter!,
       startVerse: widget.startVerse,
       version: version,
+      isPremium: isPremium,
     );
   }
 }

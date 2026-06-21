@@ -102,7 +102,7 @@ class _SparkSessionScreenState extends ConsumerState<SparkSessionScreen>
       if (snap.exists && mounted) {
         final data = snap.data()!;
         setState(() {
-          _verseText = data['text'] as String?;
+          _verseText = (data['verseText'] ?? data['text']) as String?;
           _question = data['question'] as String?;
           _reflection = data['reflection'] as String?;
           _loading = false;
@@ -585,34 +585,26 @@ class _CompletionScreenState extends State<_CompletionScreen> {
                       final book = parts.isNotEmpty ? parts[0] : 'jhn';
                       final chapter = parts.length >= 2 ? (int.tryParse(parts[1]) ?? 1) : 1;
                       final verse = parts.length >= 3 ? int.tryParse(parts[2]) : null;
-                      widget.onDone();
-                      Future.microtask(() {
-                        if (context.mounted) {
-                          context.push('/reader', extra: {
-                            'book': book,
-                            'chapter': chapter,
-                            if (verse != null) 'startVerse': verse,
-                            'version': widget.version,
-                          });
-                        }
+                      context.push('/reader', extra: {
+                        'book': book,
+                        'chapter': chapter,
+                        if (verse != null) 'startVerse': verse,
+                        'version': widget.version,
                       });
+                      widget.onDone();
                     },
                   ),
                 ] else if (widget.sessionLength == SessionLength.short) ...[
                   FlameCTAButton(
                     label: 'Go Deeper →',
                     onPressed: () {
-                      widget.onDone();
-                      Future.microtask(() {
-                        if (context.mounted) {
-                          context.push('/ai-study', extra: {
-                            'passage': widget.verseText,
-                            'reference': widget.reference,
-                            'version': widget.version,
-                            'passageId': widget.passageId,
-                          });
-                        }
+                      context.push('/ai-study', extra: {
+                        'passage': widget.verseText,
+                        'reference': widget.reference,
+                        'version': widget.version,
+                        'passageId': widget.passageId,
                       });
+                      widget.onDone();
                     },
                   ),
                   const SizedBox(height: 12),
@@ -625,35 +617,27 @@ class _CompletionScreenState extends State<_CompletionScreen> {
                   FlameCTAButton(
                     label: 'Go Deeper →',
                     onPressed: () {
-                      widget.onDone();
-                      Future.microtask(() {
-                        if (context.mounted) {
-                          context.push('/ai-study', extra: {
-                            'passage': widget.verseText,
-                            'reference': widget.reference,
-                            'version': widget.version,
-                            'passageId': widget.passageId,
-                          });
-                        }
+                      context.push('/ai-study', extra: {
+                        'passage': widget.verseText,
+                        'reference': widget.reference,
+                        'version': widget.version,
+                        'passageId': widget.passageId,
                       });
+                      widget.onDone();
                     },
                   ),
                   const SizedBox(height: 12),
                   OutlinedButton(
                     onPressed: () {
+                      Navigator.of(context, rootNavigator: true).push(
+                        MaterialPageRoute(
+                          builder: (_) => NoteEditorScreen(
+                            verseRef: widget.reference,
+                            verseText: widget.verseText,
+                          ),
+                        ),
+                      );
                       widget.onDone();
-                      Future.microtask(() {
-                        if (context.mounted) {
-                          Navigator.of(context, rootNavigator: true).push(
-                            MaterialPageRoute(
-                              builder: (_) => NoteEditorScreen(
-                                verseRef: widget.reference,
-                                verseText: widget.verseText,
-                              ),
-                            ),
-                          );
-                        }
-                      });
                     },
                     style: OutlinedButton.styleFrom(
                       minimumSize: const Size(double.infinity, 48),

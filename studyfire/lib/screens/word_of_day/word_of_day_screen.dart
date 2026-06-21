@@ -250,7 +250,7 @@ class _WordOfDayScreenState extends State<WordOfDayScreen> {
                     reacted: _reacted,
                     onReact: _react,
                     onShare: _share,
-                    onGoDeeper: _goDeeper,
+                    onGoDeeper: widget.isPremium ? _goDeeper : _showPaywallPrompt,
                     isPremium: widget.isPremium,
                   ),
           ),

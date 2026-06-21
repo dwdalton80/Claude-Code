@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../core/walkthrough/walkthrough_keys.dart';
 import '../../core/services/xp_service.dart';
 import '../../core/constants/xp_rewards.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -70,9 +71,13 @@ class GroupsScreen extends ConsumerWidget {
         error: (e, _) => Center(child: Text('Error loading groups', style: AppTypography.bodyLarge)),
         data: (groups) {
           if (groups.isEmpty) {
-            return _EmptyGroupsView(onCreateOrJoin: () => _showCreateOrJoin(context));
+            return _EmptyGroupsView(
+              key: WalkthroughKeys.groupsList,
+              onCreateOrJoin: () => _showCreateOrJoin(context),
+            );
           }
           return ListView.separated(
+            key: WalkthroughKeys.groupsList,
             padding: const EdgeInsets.all(16),
             itemCount: groups.length,
             separatorBuilder: (_, __) => const SizedBox(height: 12),
@@ -165,7 +170,7 @@ class _GroupCard extends StatelessWidget {
 
 class _EmptyGroupsView extends StatelessWidget {
   final VoidCallback onCreateOrJoin;
-  const _EmptyGroupsView({required this.onCreateOrJoin});
+  const _EmptyGroupsView({super.key, required this.onCreateOrJoin});
 
   @override
   Widget build(BuildContext context) {
@@ -985,38 +990,73 @@ class _PinnedAnnouncementCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AppColors.indigoAccent.withOpacity(0.08),
+        color: AppColors.indigoAccent.withOpacity(0.14),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.indigoAccent.withOpacity(0.25)),
+        border: Border.all(color: AppColors.indigoAccent.withOpacity(0.5)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.push_pin, size: 14, color: AppColors.indigoAccent),
-              const SizedBox(width: 6),
-              Text('Pinned',
-                  style: AppTypography.labelSmall.copyWith(color: AppColors.indigoAccent, fontSize: 11)),
-              const Spacer(),
-              if (isCreator) ...[
-                GestureDetector(
-                  onTap: onEdit,
-                  child: const Icon(Icons.edit_outlined, size: 16, color: AppColors.textSecondary),
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Left accent bar
+            Container(
+              width: 4,
+              decoration: BoxDecoration(
+                color: AppColors.indigoAccent,
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(12),
+                  bottomLeft: Radius.circular(12),
                 ),
-                const SizedBox(width: 12),
-                GestureDetector(
-                  onTap: onRemove,
-                  child: const Icon(Icons.close, size: 16, color: AppColors.textSecondary),
+              ),
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 12, 12, 14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.push_pin, size: 13, color: AppColors.indigoAccent),
+                        const SizedBox(width: 5),
+                        Text(
+                          'PINNED',
+                          style: AppTypography.labelSmall.copyWith(
+                            color: AppColors.indigoAccent,
+                            fontSize: 10,
+                            letterSpacing: 1.2,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const Spacer(),
+                        if (isCreator) ...[
+                          GestureDetector(
+                            onTap: onEdit,
+                            child: const Icon(Icons.edit_outlined, size: 16, color: AppColors.textSecondary),
+                          ),
+                          const SizedBox(width: 12),
+                          GestureDetector(
+                            onTap: onRemove,
+                            child: const Icon(Icons.close, size: 16, color: AppColors.textSecondary),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      text,
+                      style: AppTypography.bodyMedium.copyWith(
+                        color: AppColors.warmWhite,
+                        fontSize: 15,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(text, style: AppTypography.bodyMedium),
-        ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

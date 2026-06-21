@@ -34,6 +34,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _morningFocusEnabled = true;
   bool _reduceMotion = false;
   bool _saving = false;
+  int _versionTapCount = 0;
 
   @override
   void initState() {
@@ -233,14 +234,43 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
           const SizedBox(height: 40),
 
-          Center(
-            child: Text(
-              'StudyFire v1.0',
-              style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary),
+          // Triple-tap to toggle premium for TestFlight / dev testing.
+          // Works in any build. Writes to the correct profile.isPremium path.
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () {
+              _versionTapCount++;
+              if (_versionTapCount >= 3) {
+                _versionTapCount = 0;
+                _togglePremiumDebug();
+              }
+            },
+            child: Center(
+              child: Text(
+                'StudyFire v1.0',
+                style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary),
+              ),
             ),
           ),
           const SizedBox(height: 8),
         ],
+      ),
+    );
+  }
+
+  Future<void> _togglePremiumDebug() async {
+    final newValue = !widget.profile.isPremium;
+    await FirestoreService().updateProfile(
+      widget.profile.uid,
+      {'isPremium': newValue},
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(newValue
+            ? '🔓 Premium enabled — navigate away and back to reload'
+            : '🔒 Premium disabled'),
+        duration: const Duration(seconds: 3),
       ),
     );
   }
