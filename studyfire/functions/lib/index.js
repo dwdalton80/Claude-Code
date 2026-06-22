@@ -673,7 +673,13 @@ Return ONLY this JSON:
     return JSON.parse(text.substring(start, end + 1));
 });
 // ── HTTPS Callable: Ask Verse Question ───────────────────────────────────────
-const FREE_AI_DAILY_LIMIT = 3;
+/** Per-feature daily limits for free users. */
+const FREE_AI_LIMITS = {
+    askVerseQuestion: 2,
+    interpretVerse: 2,
+    deepStudyVerse: 1,
+    getVerseWordStudy: 2,
+};
 /**
  * Returns YYYY-MM-DD in UTC — used as the Firestore doc key for daily usage.
  */
@@ -681,30 +687,31 @@ function todayKey() {
     return new Date().toISOString().slice(0, 10);
 }
 /**
- * Atomically increments the user's daily AI usage counter.
+ * Atomically increments the per-feature daily AI usage counter.
  * Returns { allowed: true, remaining } or { allowed: false, remaining: 0 }.
  * isPremium is read from Firestore — never trusted from the client.
  */
-async function checkAndIncrementAiUsage(uid) {
+async function checkAndIncrementAiUsage(uid, feature) {
     // Server-side isPremium check — ignore any value the client sends
     const userSnap = await db.collection("users").doc(uid).get();
     const isPremium = userSnap.data()?.profile?.isPremium === true;
+    const limit = FREE_AI_LIMITS[feature] ?? 2;
     if (isPremium)
-        return { allowed: true, remaining: 999 };
+        return { allowed: true, remaining: 999, limit };
     const ref = db
         .collection("users")
         .doc(uid)
         .collection("aiUsage")
-        .doc(todayKey());
+        .doc(`${feature}_${todayKey()}`);
     // Atomic increment + read in a transaction
     return db.runTransaction(async (tx) => {
         const snap = await tx.get(ref);
         const current = snap.exists ? (snap.data()?.count ?? 0) : 0;
-        if (current >= FREE_AI_DAILY_LIMIT) {
-            return { allowed: false, remaining: 0 };
+        if (current >= limit) {
+            return { allowed: false, remaining: 0, limit };
         }
         tx.set(ref, { count: current + 1, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
-        return { allowed: true, remaining: FREE_AI_DAILY_LIMIT - (current + 1) };
+        return { allowed: true, remaining: limit - (current + 1), limit };
     });
 }
 exports.askVerseQuestion = functions.https.onCall(async (reqData, context) => {
@@ -719,10 +726,10 @@ exports.askVerseQuestion = functions.https.onCall(async (reqData, context) => {
         throw new functions.https.HttpsError("unauthenticated", "Must be signed in");
     }
     // Rate-limit free users (isPremium verified server-side inside this function)
-    const usage = await checkAndIncrementAiUsage(uid);
+    const usage = await checkAndIncrementAiUsage(uid, "askVerseQuestion");
     if (!usage.allowed) {
         // Return a structured error the client can handle gracefully
-        return { error: "limit_reached", remaining: 0, limit: FREE_AI_DAILY_LIMIT };
+        return { error: "limit_reached", remaining: 0, limit: usage.limit };
     }
     const client = (0, client_1.getClaudeClient)();
     const response = await client.messages.create({
@@ -754,9 +761,9 @@ exports.getVerseWordStudy = functions.https.onCall(async (reqData, context) => {
         throw new functions.https.HttpsError("unauthenticated", "Must be signed in");
     }
     // Word study counts against the daily limit (isPremium verified server-side)
-    const usage = await checkAndIncrementAiUsage(uid);
+    const usage = await checkAndIncrementAiUsage(uid, "getVerseWordStudy");
     if (!usage.allowed) {
-        return { error: "limit_reached", remaining: 0, limit: FREE_AI_DAILY_LIMIT };
+        return { error: "limit_reached", remaining: 0, limit: usage.limit };
     }
     // Determine testament from book abbreviation or reference
     // NT books start with: matt, mar, luke, joh, act, rom, 1co, 2co, gal, eph,
@@ -891,9 +898,9 @@ exports.interpretVerse = functions.https.onCall(async (reqData, context) => {
     if (!uid) {
         throw new functions.https.HttpsError("unauthenticated", "Must be signed in");
     }
-    const usage = await checkAndIncrementAiUsage(uid);
+    const usage = await checkAndIncrementAiUsage(uid, "interpretVerse");
     if (!usage.allowed) {
-        return { error: "limit_reached", remaining: 0, limit: FREE_AI_DAILY_LIMIT };
+        return { error: "limit_reached", remaining: 0, limit: usage.limit };
     }
     // Fetch user study level for tone calibration
     const userSnap = await db.collection("users").doc(uid).get();
@@ -933,9 +940,9 @@ exports.deepStudyVerse = functions.https.onCall(async (reqData, context) => {
     const uid = context.auth?.uid;
     if (!uid)
         throw new functions.https.HttpsError("unauthenticated", "Must be signed in");
-    const usage = await checkAndIncrementAiUsage(uid);
+    const usage = await checkAndIncrementAiUsage(uid, "deepStudyVerse");
     if (!usage.allowed) {
-        return { error: "limit_reached", remaining: 0, limit: FREE_AI_DAILY_LIMIT };
+        return { error: "limit_reached", remaining: 0, limit: usage.limit };
     }
     const userSnap = await db.collection("users").doc(uid).get();
     const studyLevel = userSnap.data()?.profile?.studyLevel ?? "growing";

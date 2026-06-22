@@ -788,7 +788,11 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     final count = snap.data()?['count'] as int? ?? 0;
     if (count >= 1) {
       if (mounted) {
-        showPaywallSheet(context, featureName: 'AI Sermon Debrief');
+        showPaywallSheet(
+          context,
+          featureName: 'AI Sermon Debrief',
+          limitMessage: "You've used your free AI debrief this month. Upgrade for unlimited access.",
+        );
       }
       return false;
     }

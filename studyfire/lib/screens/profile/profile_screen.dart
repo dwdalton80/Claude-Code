@@ -63,7 +63,7 @@ class ProfileScreen extends ConsumerWidget {
       body: CustomScrollView(
         slivers: [
           SliverAppBar(
-            expandedHeight: 200,
+            expandedHeight: 120,
             pinned: true,
             flexibleSpace: FlexibleSpaceBar(
               background: _HeroSection(
@@ -77,6 +77,9 @@ class ProfileScreen extends ConsumerWidget {
             ),
           ),
           SliverToBoxAdapter(
+            child: _XpCard(xp: xp, nextLevelXp: nextXp),
+          ),
+          SliverToBoxAdapter(
             child: _StatsRow(
               key: WalkthroughKeys.profileHero,
               currentStreak: streak,
@@ -84,6 +87,12 @@ class ProfileScreen extends ConsumerWidget {
               totalStudyDays: profile?.totalStudyDays ?? 0,
             ),
           ),
+          if (!(profile?.isPremium ?? false))
+            SliverToBoxAdapter(
+              child: _PremiumCtaCard(
+                onTap: () => showPaywallSheet(context),
+              ),
+            ),
           SliverToBoxAdapter(
             child: _StreakFreezeBanner(
               isPremium: profile?.isPremium ?? false,
@@ -96,7 +105,7 @@ class ProfileScreen extends ConsumerWidget {
           ),
           const SliverToBoxAdapter(child: _SectionDivider()),
           SliverToBoxAdapter(
-            child: _BadgesGrid(key: WalkthroughKeys.profileBadges),
+            child: _BadgesGrid(key: WalkthroughKeys.profileBadges, xp: xp),
           ),
           const SliverToBoxAdapter(child: _SectionDivider()),
           SliverToBoxAdapter(
@@ -142,6 +151,9 @@ class _HeroSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final levelData = LevelThresholds.forXp(xp);
+    final levelNum = levelData['level'] as int;
+
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
@@ -150,79 +162,54 @@ class _HeroSection extends StatelessWidget {
           end: Alignment.bottomCenter,
         ),
       ),
-      padding: const EdgeInsets.fromLTRB(20, 60, 20, 16),
-      child: Column(
+      padding: const EdgeInsets.fromLTRB(20, 56, 20, 16),
+      child: Row(
         children: [
-          Row(
-            children: [
-              GestureDetector(
-                onTap: () => _pickAvatar(context),
-                child: Stack(
-                  children: [
-                    CircleAvatar(
-                      radius: 32,
-                      backgroundColor: AppColors.surface,
-                      backgroundImage: avatarUrl != null ? NetworkImage(avatarUrl!) : null,
-                      child: avatarUrl == null
-                          ? Text(name[0], style: AppTypography.displaySmall.copyWith(fontSize: 28))
-                          : null,
-                    ),
-                    Positioned(
-                      bottom: 0,
-                      right: 0,
-                      child: Container(
-                        width: 20,
-                        height: 20,
-                        decoration: const BoxDecoration(
-                          color: AppColors.warmGold,
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(Icons.edit, size: 12, color: Colors.white),
-                      ),
-                    ),
-                  ],
+          GestureDetector(
+            onTap: () => _pickAvatar(context),
+            child: Stack(
+              children: [
+                CircleAvatar(
+                  radius: 30,
+                  backgroundColor: AppColors.surface,
+                  backgroundImage: avatarUrl != null ? NetworkImage(avatarUrl!) : null,
+                  child: avatarUrl == null
+                      ? Text(name[0], style: AppTypography.displaySmall.copyWith(fontSize: 26))
+                      : null,
                 ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(name, style: AppTypography.labelLarge),
-                    Row(
-                      children: [
-                        const Text('🔥', style: TextStyle(fontSize: 14)),
-                        const SizedBox(width: 4),
-                        Text(levelName, style: AppTypography.bodySmall.copyWith(
-                          color: AppColors.warmGold,
-                        )),
-                      ],
-                    ),
-                  ],
+                Positioned(
+                  bottom: 0, right: 0,
+                  child: Container(
+                    width: 18, height: 18,
+                    decoration: const BoxDecoration(color: AppColors.warmGold, shape: BoxShape.circle),
+                    child: const Icon(Icons.edit, size: 11, color: Colors.white),
+                  ),
                 ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.settings_outlined, color: AppColors.textSecondary),
-                onPressed: onSettingsTap,
-              ),
-            ],
+              ],
+            ),
           ),
-          const SizedBox(height: 16),
-          XpProgressBar(
-            current: xp,
-            max: nextLevelXp,
-            label: '$xp / $nextLevelXp XP to ${_nextLevelName()}',
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(name, style: AppTypography.labelLarge),
+                const SizedBox(height: 2),
+                Text(
+                  'Level $levelNum · $levelName',
+                  style: AppTypography.bodySmall.copyWith(color: AppColors.warmGold),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.settings_outlined, color: AppColors.textSecondary),
+            onPressed: onSettingsTap,
           ),
         ],
       ),
     );
-  }
-
-  String _nextLevelName() {
-    final next = LevelThresholds.nextThreshold(xp);
-    if (next == null) return 'Max Level';
-    final nextData = LevelThresholds.forXp(next);
-    return nextData['name'] as String;
   }
 
   void _pickAvatar(BuildContext context) async {
@@ -245,6 +232,90 @@ class _HeroSection extends StatelessWidget {
         SnackBar(content: Text('Failed to update photo: $e')),
       );
     }
+  }
+}
+
+class _XpCard extends StatelessWidget {
+  final int xp;
+  final int nextLevelXp;
+
+  const _XpCard({required this.xp, required this.nextLevelXp});
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = nextLevelXp > 0 ? (xp / nextLevelXp).clamp(0.0, 1.0) : 1.0;
+    final xpToNext = nextLevelXp - xp;
+    final nextLevelName = _nextLevelName();
+    final nextUnlock = _nextUnlock();
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface.withOpacity(0.6),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.warmGold.withOpacity(0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                '$xp XP',
+                style: AppTypography.labelLarge.copyWith(
+                  color: AppColors.warmGold,
+                  fontSize: 22,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                xpToNext > 0 ? '$xpToNext XP to $nextLevelName' : '🏆 Max Level',
+                style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 8,
+              backgroundColor: AppColors.surface,
+              valueColor: const AlwaysStoppedAnimation<Color>(AppColors.warmGold),
+            ),
+          ),
+          if (nextUnlock != null) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                const Icon(Icons.lock_open_outlined, size: 13, color: AppColors.textSecondary),
+                const SizedBox(width: 6),
+                Text(
+                  'Next unlock: $nextUnlock',
+                  style: AppTypography.bodySmall.copyWith(
+                    color: AppColors.textSecondary,
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  String _nextLevelName() {
+    final next = LevelThresholds.nextThreshold(xp);
+    if (next == null) return 'Max Level';
+    return LevelThresholds.forXp(next)['name'] as String;
+  }
+
+  String? _nextUnlock() {
+    final next = LevelThresholds.nextThreshold(xp);
+    if (next == null) return null;
+    return LevelThresholds.forXp(next)['unlock'] as String?;
   }
 }
 
@@ -581,7 +652,8 @@ class _BookGrid extends StatelessWidget {
 }
 
 class _BadgesGrid extends StatefulWidget {
-  const _BadgesGrid({super.key});
+  final int xp;
+  const _BadgesGrid({super.key, this.xp = 0});
 
   @override
   State<_BadgesGrid> createState() => _BadgesGridState();
@@ -662,6 +734,7 @@ class _BadgesGridState extends State<_BadgesGrid> {
               child: Text('Tap a badge to share it!',
                 style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary)),
             ),
+          _NextBadgeProgress(xp: widget.xp),
         ],
       ),
     );
@@ -710,6 +783,95 @@ class _BadgeCell extends StatelessWidget {
             maxLines: 2,
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _NextBadgeProgress extends StatelessWidget {
+  final int xp;
+  const _NextBadgeProgress({required this.xp});
+
+  @override
+  Widget build(BuildContext context) {
+    // Find next badge milestone
+    final milestones = XpMilestones.badges.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+
+    MapEntry<int, String>? prev;
+    MapEntry<int, String>? next;
+    for (final m in milestones) {
+      if (xp >= m.key) {
+        prev = m;
+      } else {
+        next = m;
+        break;
+      }
+    }
+
+    if (next == null) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 12),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Text('🏆', style: TextStyle(fontSize: 14)),
+            const SizedBox(width: 6),
+            Text(
+              'All XP badges earned!',
+              style: AppTypography.bodySmall.copyWith(color: AppColors.warmGold),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final prevXp = prev?.key ?? 0;
+    final range = next.key - prevXp;
+    final progress = range > 0 ? ((xp - prevXp) / range).clamp(0.0, 1.0) : 0.0;
+    final remaining = next.key - xp;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppColors.surface.withOpacity(0.5),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text(
+                  'Next Badge',
+                  style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary),
+                ),
+                const Spacer(),
+                Text(
+                  '$remaining XP to go',
+                  style: AppTypography.bodySmall.copyWith(color: AppColors.warmGold, fontSize: 11),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: progress,
+                minHeight: 6,
+                backgroundColor: AppColors.surface,
+                valueColor: const AlwaysStoppedAnimation<Color>(AppColors.warmGold),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '🔥 ${next.value.replaceAll('_', ' ').split(' ').map((w) => w[0].toUpperCase() + w.substring(1)).join(' ')} — ${next.key} XP',
+              style: AppTypography.bodySmall.copyWith(color: AppColors.warmWhite, fontSize: 11),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1395,6 +1557,188 @@ class _AddVerseSheetState extends State<_AddVerseSheet> {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ── Premium CTA Card ──────────────────────────────────────────────────────────
+
+class _PremiumCtaCard extends StatelessWidget {
+  final VoidCallback onTap;
+  const _PremiumCtaCard({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                AppColors.warmGold.withOpacity(0.18),
+                AppColors.warmGold.withOpacity(0.06),
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppColors.warmGold.withOpacity(0.5)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Text('⚡', style: TextStyle(fontSize: 18)),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Unlock StudyFire Premium',
+                    style: AppTypography.labelMedium.copyWith(color: AppColors.warmGold),
+                  ),
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: AppColors.warmGold,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Text(
+                      'PRO',
+                      style: TextStyle(color: Colors.black, fontSize: 10, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+
+              // Free section
+              Text(
+                'Already included (Free)',
+                style: AppTypography.bodySmall.copyWith(
+                  color: AppColors.textSecondary,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              _CheckRow(label: 'Daily Quiz & Lightning Trial', included: true),
+              const SizedBox(height: 5),
+              _CheckRow(label: 'Today\'s Quest', included: true),
+              const SizedBox(height: 5),
+              _CheckRow(label: '1 Deep Study · 2 AI questions per day', included: true),
+              const SizedBox(height: 5),
+              _CheckRow(label: 'KJV Bible + 1 memory verse', included: true),
+
+              // Divider
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Divider(color: AppColors.warmGold.withOpacity(0.25), height: 1),
+              ),
+
+              // Premium section
+              Text(
+                'Unlock with Premium',
+                style: AppTypography.bodySmall.copyWith(
+                  color: AppColors.warmGold,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              _CheckRow(label: 'Unlimited AI questions & Deep Study', included: false),
+              const SizedBox(height: 5),
+              _CheckRow(label: 'All Bible versions (NIV, CSB, ESV…)', included: false),
+              const SizedBox(height: 5),
+              _CheckRow(label: 'Greek & Hebrew Explorer', included: false),
+              const SizedBox(height: 5),
+              _CheckRow(label: 'Streak Freeze — never lose your streak', included: false),
+              const SizedBox(height: 5),
+              _CheckRow(label: 'Unlimited Memory Verses', included: false),
+
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: onTap,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.warmGold,
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    elevation: 0,
+                  ),
+                  child: const Text(
+                    'Upgrade — \$3.99/mo',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Center(
+                child: Text(
+                  '\$29.99/year · \$19.99 student',
+                  style: AppTypography.bodySmall.copyWith(
+                    color: AppColors.textSecondary,
+                    fontSize: 11,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FeatureRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  const _FeatureRow({required this.icon, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, size: 15, color: AppColors.warmGold),
+        const SizedBox(width: 8),
+        Text(label, style: AppTypography.bodySmall.copyWith(color: AppColors.warmWhite)),
+      ],
+    );
+  }
+}
+
+class _CheckRow extends StatelessWidget {
+  final String label;
+  final bool included;
+  const _CheckRow({required this.label, required this.included});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          included ? '✓' : '🔒',
+          style: TextStyle(
+            fontSize: 12,
+            color: included ? const Color(0xFF4CAF50) : AppColors.warmGold,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            label,
+            style: AppTypography.bodySmall.copyWith(
+              color: included ? AppColors.warmWhite.withOpacity(0.8) : AppColors.warmWhite,
+              fontSize: 12,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

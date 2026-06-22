@@ -78,14 +78,18 @@ class PremiumInlineBanner extends StatelessWidget {
 }
 
 /// Shows a paywall bottom sheet from anywhere.
-void showPaywallSheet(BuildContext context, {String? featureName}) {
+///
+/// [featureName] is the feature the user hit a limit on — shown as the headline.
+/// [limitMessage] describes the specific limit (e.g. "You've used your 3 free AI questions today").
+void showPaywallSheet(BuildContext context, {String? featureName, String? limitMessage}) {
   showModalBottomSheet(
     context: context,
     backgroundColor: AppColors.cardDark,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
-    builder: (_) => _PaywallBottomSheet(featureName: featureName),
+    isScrollControlled: true,
+    builder: (_) => _PaywallBottomSheet(featureName: featureName, limitMessage: limitMessage),
   );
 }
 
@@ -144,37 +148,96 @@ class _PaywallScreen extends StatelessWidget {
 
 class _PaywallBottomSheet extends StatelessWidget {
   final String? featureName;
+  final String? limitMessage;
 
-  const _PaywallBottomSheet({this.featureName});
+  const _PaywallBottomSheet({this.featureName, this.limitMessage});
 
   @override
   Widget build(BuildContext context) {
+    // Determine which feature to highlight based on featureName
+    final highlights = _highlightsFor(featureName);
+
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 24, 24, 40),
+      padding: const EdgeInsets.fromLTRB(24, 28, 24, 40),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (featureName != null) ...[
-            Text(
-              '🔒 $featureName',
-              style: AppTypography.displaySmall,
-              textAlign: TextAlign.center,
+          // Handle bar
+          Container(
+            width: 36,
+            height: 4,
+            margin: const EdgeInsets.only(bottom: 20),
+            decoration: BoxDecoration(
+              color: AppColors.textSecondary.withOpacity(0.3),
+              borderRadius: BorderRadius.circular(2),
             ),
-            const SizedBox(height: 12),
-          ],
+          ),
+
+          const Text('⚡', style: TextStyle(fontSize: 36)),
+          const SizedBox(height: 10),
+
           Text(
-            'Unlock unlimited AI study questions, all Bible versions, Greek/Hebrew Explorer, streak freeze, and more.',
-            style: AppTypography.bodyMedium.copyWith(color: AppColors.textSecondary),
+            featureName != null ? 'Unlock $featureName' : 'Unlock StudyFire Premium',
+            style: AppTypography.displaySmall,
             textAlign: TextAlign.center,
           ),
+
+          if (limitMessage != null) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: AppColors.warmGold.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppColors.warmGold.withOpacity(0.3)),
+              ),
+              child: Text(
+                limitMessage!,
+                style: AppTypography.bodySmall.copyWith(color: AppColors.warmWhite),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ],
+
+          const SizedBox(height: 20),
+
+          // Feature list
+          ...highlights.map((h) => Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Row(
+              children: [
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: AppColors.warmGold.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(h.$1, size: 16, color: AppColors.warmGold),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(h.$2, style: AppTypography.labelSmall.copyWith(color: AppColors.warmWhite)),
+                      Text(h.$3, style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary, fontSize: 11)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          )),
+
           const SizedBox(height: 8),
           Text(
             '\$3.99/month · \$29.99/year · \$19.99 student',
             style: AppTypography.labelSmall.copyWith(color: AppColors.warmGold),
+            textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 20),
           FlameCTAButton(
-            label: 'Unlock Premium — \$3.99/mo',
+            label: 'Upgrade — \$3.99/mo',
             onPressed: () {
               Navigator.pop(context);
               // TODO: RevenueCat.presentPaywall()
@@ -183,10 +246,38 @@ class _PaywallBottomSheet extends StatelessWidget {
           const SizedBox(height: 8),
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Not now', style: AppTypography.bodySmall),
+            child: Text('Not now', style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary)),
           ),
         ],
       ),
     );
+  }
+
+  // Returns (icon, title, subtitle) tuples — highlights the relevant feature first
+  List<(IconData, String, String)> _highlightsFor(String? feature) {
+    const all = [
+      (Icons.psychology_outlined,     'Unlimited AI Questions',    'Get as many study questions as you want'),
+      (Icons.menu_book_outlined,       'All Bible Versions',        'NIV, CSB, ESV, NASB and more'),
+      (Icons.translate_outlined,       'Greek & Hebrew Explorer',   'Dig into original language word studies'),
+      (Icons.ac_unit_outlined,         'Streak Freeze',             'Protect your streak for up to 3 days'),
+    ];
+
+    if (feature == null) return all;
+
+    final f = feature.toLowerCase();
+    final List<(IconData, String, String)> sorted = [...all];
+
+    // Bubble the relevant feature to top
+    if (f.contains('ai') || f.contains('question')) {
+      sorted.sort((a, b) => a.$2.contains('AI') ? -1 : 1);
+    } else if (f.contains('version') || f.contains('bible')) {
+      sorted.sort((a, b) => a.$2.contains('Bible') ? -1 : 1);
+    } else if (f.contains('greek') || f.contains('hebrew') || f.contains('word')) {
+      sorted.sort((a, b) => a.$2.contains('Greek') ? -1 : 1);
+    } else if (f.contains('streak') || f.contains('freeze')) {
+      sorted.sort((a, b) => a.$2.contains('Streak') ? -1 : 1);
+    }
+
+    return sorted;
   }
 }

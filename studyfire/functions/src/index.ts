@@ -761,7 +761,14 @@ Return ONLY this JSON:
 });
 
 // ── HTTPS Callable: Ask Verse Question ───────────────────────────────────────
-const FREE_AI_DAILY_LIMIT = 3;
+
+/** Per-feature daily limits for free users. */
+const FREE_AI_LIMITS: Record<string, number> = {
+  askVerseQuestion: 2,
+  interpretVerse:   2,
+  deepStudyVerse:   1,
+  getVerseWordStudy: 2,
+};
 
 /**
  * Returns YYYY-MM-DD in UTC — used as the Firestore doc key for daily usage.
@@ -771,35 +778,37 @@ function todayKey(): string {
 }
 
 /**
- * Atomically increments the user's daily AI usage counter.
+ * Atomically increments the per-feature daily AI usage counter.
  * Returns { allowed: true, remaining } or { allowed: false, remaining: 0 }.
  * isPremium is read from Firestore — never trusted from the client.
  */
 async function checkAndIncrementAiUsage(
-  uid: string
-): Promise<{ allowed: boolean; remaining: number }> {
+  uid: string,
+  feature: string
+): Promise<{ allowed: boolean; remaining: number; limit: number }> {
   // Server-side isPremium check — ignore any value the client sends
   const userSnap = await db.collection("users").doc(uid).get();
   const isPremium = userSnap.data()?.profile?.isPremium === true;
-  if (isPremium) return { allowed: true, remaining: 999 };
+  const limit = FREE_AI_LIMITS[feature] ?? 2;
+  if (isPremium) return { allowed: true, remaining: 999, limit };
 
   const ref = db
     .collection("users")
     .doc(uid)
     .collection("aiUsage")
-    .doc(todayKey());
+    .doc(`${feature}_${todayKey()}`);
 
   // Atomic increment + read in a transaction
   return db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     const current: number = snap.exists ? (snap.data()?.count ?? 0) : 0;
 
-    if (current >= FREE_AI_DAILY_LIMIT) {
-      return { allowed: false, remaining: 0 };
+    if (current >= limit) {
+      return { allowed: false, remaining: 0, limit };
     }
 
     tx.set(ref, { count: current + 1, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
-    return { allowed: true, remaining: FREE_AI_DAILY_LIMIT - (current + 1) };
+    return { allowed: true, remaining: limit - (current + 1), limit };
   });
 }
 
@@ -818,10 +827,10 @@ export const askVerseQuestion = functions.https.onCall(async (reqData, context) 
   }
 
   // Rate-limit free users (isPremium verified server-side inside this function)
-  const usage = await checkAndIncrementAiUsage(uid);
+  const usage = await checkAndIncrementAiUsage(uid, "askVerseQuestion");
   if (!usage.allowed) {
     // Return a structured error the client can handle gracefully
-    return { error: "limit_reached", remaining: 0, limit: FREE_AI_DAILY_LIMIT };
+    return { error: "limit_reached", remaining: 0, limit: usage.limit };
   }
 
   const client = getClaudeClient();
@@ -859,9 +868,9 @@ export const getVerseWordStudy = functions.https.onCall(async (reqData, context)
   }
 
   // Word study counts against the daily limit (isPremium verified server-side)
-  const usage = await checkAndIncrementAiUsage(uid);
+  const usage = await checkAndIncrementAiUsage(uid, "getVerseWordStudy");
   if (!usage.allowed) {
-    return { error: "limit_reached", remaining: 0, limit: FREE_AI_DAILY_LIMIT };
+    return { error: "limit_reached", remaining: 0, limit: usage.limit };
   }
 
   // Determine testament from book abbreviation or reference
@@ -1022,9 +1031,9 @@ export const interpretVerse = functions.https.onCall(async (reqData, context) =>
     throw new functions.https.HttpsError("unauthenticated", "Must be signed in");
   }
 
-  const usage = await checkAndIncrementAiUsage(uid);
+  const usage = await checkAndIncrementAiUsage(uid, "interpretVerse");
   if (!usage.allowed) {
-    return { error: "limit_reached", remaining: 0, limit: FREE_AI_DAILY_LIMIT };
+    return { error: "limit_reached", remaining: 0, limit: usage.limit };
   }
 
   // Fetch user study level for tone calibration
@@ -1071,9 +1080,9 @@ export const deepStudyVerse = functions.https.onCall(async (reqData, context) =>
   const uid = context.auth?.uid;
   if (!uid) throw new functions.https.HttpsError("unauthenticated", "Must be signed in");
 
-  const usage = await checkAndIncrementAiUsage(uid);
+  const usage = await checkAndIncrementAiUsage(uid, "deepStudyVerse");
   if (!usage.allowed) {
-    return { error: "limit_reached", remaining: 0, limit: FREE_AI_DAILY_LIMIT };
+    return { error: "limit_reached", remaining: 0, limit: usage.limit };
   }
 
   const userSnap = await db.collection("users").doc(uid).get();

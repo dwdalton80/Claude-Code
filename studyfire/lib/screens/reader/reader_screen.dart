@@ -325,7 +325,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     }
   }
 
-  static const _freeMemoryVerseLimit = 3;
+  static const _freeMemoryVerseLimit = 1;
 
   Future<void> _saveMemoryVerseGated(BibleVerse verse) async {
     // Premium users: unlimited
@@ -337,7 +337,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     final existing = await _db.watchMemoryVerses(widget.uid).first;
     if (existing.length >= _freeMemoryVerseLimit) {
       if (mounted) {
-        showPaywallSheet(context, featureName: 'Unlimited Memory Verses');
+        showPaywallSheet(
+          context,
+          featureName: 'Unlimited Memory Verses',
+          limitMessage: "Free accounts can save 1 memory verse. Upgrade to memorize as many as you want.",
+        );
       }
       return;
     }
@@ -2290,7 +2294,7 @@ class _DeepStudySheetState extends State<_DeepStudySheet> {
       final data = Map<String, dynamic>.from(result.data as Map);
       if (data['error'] == 'limit_reached') {
         if (mounted) setState(() {
-          _error = 'Daily AI limit reached. Upgrade to Premium for unlimited access.';
+          _error = 'You\'ve used your 1 free Deep Study today. Upgrade to Premium for unlimited access.';
           _loading = false;
         });
         return;
@@ -2707,7 +2711,7 @@ class _InterpretSheetState extends State<_InterpretSheet> {
       final data = result.data as Map?;
       if (data?['error'] == 'limit_reached') {
         if (mounted) setState(() {
-          _error = 'You\'ve reached your daily AI limit. Upgrade to Premium for unlimited access.';
+          _error = 'You\'ve used your 2 free Interpretations today. Upgrade to Premium for unlimited access.';
           _loading = false;
         });
         return;
@@ -3236,7 +3240,7 @@ class _AskAiSheetState extends State<_AskAiSheet> {
       if (data?['error'] == 'limit_reached') {
         if (mounted) setState(() {
           _messages.removeLast(); // remove the user bubble
-          _messages.add({'role': 'limit_reached', 'content': '3'});
+          _messages.add({'role': 'limit_reached', 'content': '2'});
           _loading = false;
         });
         return;
@@ -3288,7 +3292,7 @@ class _AskAiSheetState extends State<_AskAiSheet> {
       if (data?['error'] == 'limit_reached') {
         if (mounted) setState(() {
           _messages.removeLast();
-          _messages.add({'role': 'limit_reached', 'content': '3'});
+          _messages.add({'role': 'limit_reached', 'content': '2'});
           _loading = false;
         });
         return;
@@ -3411,7 +3415,7 @@ class _AskAiSheetState extends State<_AskAiSheet> {
                                   color: AppColors.warmGold, fontWeight: FontWeight.bold, fontSize: 14)),
                                 const SizedBox(height: 6),
                                 Text(
-                                  'Free users get 3 AI questions per day. Upgrade to Premium for unlimited questions, Greek/Hebrew word study, and more.',
+                                  'Free users get 2 AI questions per day. Upgrade to Premium for unlimited questions, Greek/Hebrew word study, and more.',
                                   style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary),
                                 ),
                                 const SizedBox(height: 12),
@@ -3425,7 +3429,11 @@ class _AskAiSheetState extends State<_AskAiSheet> {
                                     ),
                                     onPressed: () {
                                       Navigator.pop(context);
-                                      // TODO: navigate to premium upgrade screen
+                                      showPaywallSheet(
+                                        context,
+                                        featureName: 'AI Questions',
+                                        limitMessage: "You've used your 2 free questions today.",
+                                      );
                                     },
                                     child: const Text('Upgrade to Premium', style: TextStyle(fontWeight: FontWeight.bold)),
                                   ),
