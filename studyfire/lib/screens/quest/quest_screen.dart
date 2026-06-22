@@ -32,6 +32,11 @@ class _QuestScreenState extends ConsumerState<QuestScreen> {
   int _dailyXp = 0;
   int _totalXp = 0;
   String _studyLevel = 'Beginner';
+  bool _completedToday = false;
+  String _countdown = '';
+  Timer? _countdownTimer;
+
+  String get _today => DateTime.now().toIso8601String().split('T')[0];
 
   /// Daily XP goal scales with level: (next threshold − current threshold) ÷ 30,
   /// clamped to [50, 300]. Seeker→Disciple gap is 500 → goal 50 (min).
@@ -50,6 +55,47 @@ class _QuestScreenState extends ConsumerState<QuestScreen> {
     _loadTodaysPassage();
     _loadUserStats();
     _checkSparkHint();
+    _checkCompletedToday();
+  }
+
+  @override
+  void dispose() {
+    _countdownTimer?.cancel();
+    _profileSub?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _checkCompletedToday() async {
+    final prefs = await SharedPreferences.getInstance();
+    final completedDate = prefs.getString('questCompletedDate') ?? '';
+    if (completedDate == _today && mounted) {
+      setState(() => _completedToday = true);
+      _startCountdown();
+    }
+  }
+
+  void _startCountdown() {
+    _updateCountdown();
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) => _updateCountdown());
+  }
+
+  void _updateCountdown() {
+    final now = DateTime.now();
+    final midnight = DateTime(now.year, now.month, now.day + 1);
+    final diff = midnight.difference(now);
+    final h = diff.inHours.toString().padLeft(2, '0');
+    final m = (diff.inMinutes % 60).toString().padLeft(2, '0');
+    final s = (diff.inSeconds % 60).toString().padLeft(2, '0');
+    if (mounted) setState(() => _countdown = '$h:$m:$s');
+  }
+
+  Future<void> _markQuestComplete() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('questCompletedDate', _today);
+    if (mounted) {
+      setState(() => _completedToday = true);
+      _startCountdown();
+    }
   }
 
   Future<void> _checkSparkHint() async {
@@ -178,6 +224,8 @@ class _QuestScreenState extends ConsumerState<QuestScreen> {
                   onLengthChanged: (l) => setState(() => _sessionLength = l),
                   onStart: _startSession,
                   onRandomSpark: _randomSpark,
+                  completedToday: _completedToday,
+                  countdown: _countdown,
                 )),
                 Expanded(flex: 2, child: _StatsBar(
                   streak: _streak,
@@ -206,7 +254,7 @@ void _startSession() {
           sessionLength: _sessionLength,
         ),
       ),
-    );
+    ).then((_) => _markQuestComplete());
   }
 
   void _randomSpark() {
@@ -238,6 +286,8 @@ class _QuestCard extends StatelessWidget {
   final ValueChanged<SessionLength> onLengthChanged;
   final VoidCallback onStart;
   final VoidCallback onRandomSpark;
+  final bool completedToday;
+  final String countdown;
 
   const _QuestCard({
     required this.passage,
@@ -247,6 +297,8 @@ class _QuestCard extends StatelessWidget {
     required this.onLengthChanged,
     required this.onStart,
     required this.onRandomSpark,
+    this.completedToday = false,
+    this.countdown = '',
   });
 
   @override
@@ -309,17 +361,37 @@ class _QuestCard extends StatelessWidget {
               onChanged: onLengthChanged,
             ),
             const SizedBox(height: 16),
-            Flexible(
-              child: GestureDetector(
-                onTap: onStart,
-                child: Image.asset(
-                  'assets/images/start_quest_button.png',
-                  key: WalkthroughKeys.startQuestButton,
-                  width: double.infinity,
-                  fit: BoxFit.contain,
+            if (completedToday)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: AppColors.warmGold.withOpacity(0.3)),
+                ),
+                child: Column(
+                  children: [
+                    const Text('✅', style: TextStyle(fontSize: 28)),
+                    const SizedBox(height: 6),
+                    Text('Quest Complete!', style: AppTypography.labelLarge.copyWith(color: AppColors.warmGold)),
+                    const SizedBox(height: 4),
+                    Text('Next quest in $countdown', style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary)),
+                  ],
+                ),
+              )
+            else
+              Flexible(
+                child: GestureDetector(
+                  onTap: onStart,
+                  child: Image.asset(
+                    'assets/images/start_quest_button.png',
+                    key: WalkthroughKeys.startQuestButton,
+                    width: double.infinity,
+                    fit: BoxFit.contain,
+                  ),
                 ),
               ),
-            ),
             const SizedBox(height: 16),
             Center(
               child: GestureDetector(
