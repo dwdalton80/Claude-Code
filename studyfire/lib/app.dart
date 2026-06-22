@@ -213,7 +213,7 @@ class AppShell extends ConsumerStatefulWidget {
     (path: '/quest',   label: 'Quest',   icon: Icons.flash_on),
     (path: '/groups',  label: 'Groups',  icon: Icons.group),
     (path: '/games',   label: 'Games',   icon: Icons.psychology),
-    (path: '/reader',  label: 'Reader',  icon: Icons.menu_book),
+    (path: '/reader',  label: 'Bible',   icon: Icons.menu_book),
     (path: '/profile', label: 'Profile', icon: Icons.person),
   ];
 

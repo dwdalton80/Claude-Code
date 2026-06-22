@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/colors.dart';
 import '../../core/constants/typography.dart';
 import '../../core/services/auth_service.dart';
+import '../../core/services/firestore_service.dart';
 import '../../models/user_profile.dart';
 import '../../widgets/common/flame_cta_button.dart';
 import '../../widgets/common/progress_bar.dart';
@@ -71,13 +72,14 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
               3 => _StudyLevelStep(onSelect: (l) { _selectedStudyLevel = l; _advance(); }),
               4 => _ReminderStep(onSelect: (r) { _selectedReminder = r; _advance(); }),
               5 => _AccountStep(
-                  onComplete: _completeOnboarding,
+                  onComplete: () async => setState(() => _step = 6),
                   isLoading: _isLoading,
                   selectedVersion: _selectedVersion,
                   selectedGoal: _selectedGoal,
                   selectedStudyLevel: _selectedStudyLevel,
                   selectedReminder: _selectedReminder,
                 ),
+              6 => _GroupStep(onComplete: _completeOnboarding),
               _ => const SizedBox.shrink(),
             },
           ),
@@ -88,15 +90,16 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
 
   Future<void> _completeOnboarding() async {
     setState(() => _isLoading = true);
-    // Save onboarding preferences only if user made selections (new sign-up flow)
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid != null && (_selectedVersion != null || _selectedGoal != null)) {
+    if (uid != null) {
+      // Always write onboardingCompleted so the router can navigate away.
+      // Preferences are written only when the user made selections.
       await FirebaseFirestore.instance.collection('users').doc(uid).update({
+        'onboardingCompleted': true,
         if (_selectedVersion != null) 'preferences.version': _selectedVersion!.name,
         if (_selectedGoal != null) 'preferences.studyGoal': _selectedGoal!.name,
         if (_selectedStudyLevel != null) 'profile.studyLevel': _selectedStudyLevel,
-        'preferences.reminderTime': _selectedReminder,
-        'onboardingCompleted': true,
+        if (_selectedReminder != null) 'preferences.reminderTime': _selectedReminder,
       });
     }
     // Navigation handled by auth state change listener in router
@@ -794,6 +797,135 @@ class _StepProgress extends StatelessWidget {
           ],
         ),
       ],
+    );
+  }
+}
+
+// ── Step 6: Group Prompt ──────────────────────────────────────────────────────
+
+class _GroupStep extends StatefulWidget {
+  final VoidCallback onComplete;
+  const _GroupStep({required this.onComplete});
+
+  @override
+  State<_GroupStep> createState() => _GroupStepState();
+}
+
+class _GroupStepState extends State<_GroupStep> {
+  final _codeCtrl = TextEditingController();
+  bool _joining = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _codeCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _joinWithCode() async {
+    final code = _codeCtrl.text.trim().toUpperCase();
+    if (code.isEmpty) return;
+    setState(() { _joining = true; _error = null; });
+    try {
+      final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+      await FirestoreService().joinGroupByCode(uid, code);
+      if (mounted) widget.onComplete();
+    } on Exception catch (e) {
+      if (mounted) setState(() { _joining = false; _error = e.toString().contains('Invalid') ? 'Code not found — check and try again' : 'Something went wrong — try again'; });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 28),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 48),
+            const _StepProgress(current: 6, total: 6),
+            const SizedBox(height: 32),
+            const Text('👥', style: TextStyle(fontSize: 48)),
+            const SizedBox(height: 16),
+            Text('Study with others', style: AppTypography.displaySmall),
+            const SizedBox(height: 12),
+            Text(
+              'Groups make Bible study stick. Share notes, pray together, and keep each other accountable.',
+              style: AppTypography.bodyLarge.copyWith(color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 36),
+            // Join with code
+            Text('Have an invite code?', style: AppTypography.labelMedium),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _codeCtrl,
+                    textCapitalization: TextCapitalization.characters,
+                    style: AppTypography.bodyLarge,
+                    decoration: InputDecoration(
+                      hintText: 'Enter invite code',
+                      hintStyle: AppTypography.bodyLarge.copyWith(color: AppColors.textSecondary),
+                      errorText: _error,
+                      filled: true,
+                      fillColor: AppColors.surface,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                    onSubmitted: (_) => _joinWithCode(),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                SizedBox(
+                  height: 52,
+                  child: FilledButton(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.flameOrange,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: _joining ? null : _joinWithCode,
+                    child: _joining
+                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : const Text('Join'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            const Row(children: [
+              Expanded(child: Divider(color: Colors.white12)),
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: 12),
+                child: Text('or', style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+              ),
+              Expanded(child: Divider(color: Colors.white12)),
+            ]),
+            const SizedBox(height: 24),
+            FlameCTAButton(
+              label: 'Create a Group',
+              onPressed: () {
+                widget.onComplete();
+                // Router will navigate to home; user can create from Groups tab
+              },
+            ),
+            const Spacer(),
+            Center(
+              child: TextButton(
+                onPressed: widget.onComplete,
+                child: Text(
+                  'Skip for now',
+                  style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
     );
   }
 }

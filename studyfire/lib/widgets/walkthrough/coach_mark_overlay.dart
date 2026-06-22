@@ -196,127 +196,110 @@ class CoachMarkOverlay extends ConsumerWidget {
 
     final step = state.step!;
 
-    // Determine spotlight rect from GlobalKey, or use a default center rect
-    Rect spotRect = Rect.fromCenter(
-      center: Offset(
-        MediaQuery.of(context).size.width / 2,
-        MediaQuery.of(context).size.height / 2,
-      ),
-      width: 0,
-      height: 0,
-    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // availableSize = the actual body area (excludes status bar + nav bar)
+        final availableSize = constraints.biggest;
 
-    if (step.targetKey?.currentContext != null) {
-      final renderBox =
-          step.targetKey!.currentContext!.findRenderObject() as RenderBox?;
-      if (renderBox != null && renderBox.attached && renderBox.hasSize) {
-        try {
-          final offset = renderBox.localToGlobal(Offset.zero);
-          final size = renderBox.size;
-          spotRect = Rect.fromLTWH(
-            offset.dx - step.spotlightPadding,
-            offset.dy - step.spotlightPadding,
-            size.width + step.spotlightPadding * 2,
-            size.height + step.spotlightPadding * 2,
-          );
-        } catch (_) {
-          // Ancestor not yet laid out — use default centered rect this frame.
+        // Determine spotlight rect in the overlay's LOCAL coordinate space.
+        Rect spotRect = Rect.fromCenter(
+          center: Offset(availableSize.width / 2, availableSize.height / 2),
+          width: 0,
+          height: 0,
+        );
+
+        if (step.targetKey?.currentContext != null) {
+          final targetBox =
+              step.targetKey!.currentContext!.findRenderObject() as RenderBox?;
+          final overlayBox = context.findRenderObject() as RenderBox?;
+          if (targetBox != null && targetBox.attached && targetBox.hasSize &&
+              overlayBox != null && overlayBox.attached) {
+            try {
+              // Convert to overlay-local coords so painting aligns with layout.
+              final localOffset =
+                  targetBox.localToGlobal(Offset.zero, ancestor: overlayBox);
+              final size = targetBox.size;
+              spotRect = Rect.fromLTWH(
+                localOffset.dx - step.spotlightPadding,
+                localOffset.dy - step.spotlightPadding,
+                size.width + step.spotlightPadding * 2,
+                size.height + step.spotlightPadding * 2,
+              );
+            } catch (_) {
+              // ancestor not yet laid out — use default centered rect
+            }
+          }
         }
-      }
-    }
 
-    final screenSize = MediaQuery.of(context).size;
-    final bottomInset = MediaQuery.of(context).padding.bottom;
-    // Bottom nav bar height + safe area
-    const navBarHeight = 60.0;
-    final tooltipBottomOffset = navBarHeight + bottomInset + 8;
+        final spotCenterY = spotRect.center.dy;
+        final bool spotIsInBottomHalf =
+            spotCenterY > availableSize.height * 0.5;
 
-    // Decide whether to anchor tooltip above or below the spotlight.
-    // Rule: if spotlight center is in the bottom half → show tooltip above it.
-    //       Otherwise → pin to bottom above nav bar.
-    final spotCenterY = spotRect.center.dy;
-    final bool spotIsInBottomHalf = spotCenterY > screenSize.height * 0.5;
-
-    double? tooltipTop;
-    double? tooltipBottom;
-
-    if (spotIsInBottomHalf) {
-      // Tooltip above the spotlight
-      tooltipBottom = screenSize.height - spotRect.top + 12;
-      // Safety: never push tooltip off the top
-      final maxBottom = screenSize.height - MediaQuery.of(context).padding.top - 80;
-      tooltipBottom = tooltipBottom.clamp(tooltipBottomOffset, maxBottom);
-    } else {
-      // Tooltip pinned above bottom nav, arrow points up toward spotlight
-      tooltipBottom = tooltipBottomOffset;
-    }
-
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () {},  // swallow taps — only Next/Skip buttons work
-      child: Stack(
-        children: [
-          // Spotlight overlay
-          CustomPaint(
-            size: screenSize,
-            painter: _SpotlightPainter(
-              spotRect: spotRect,
-              radius: step.spotlightRadius,
-            ),
-          ),
-
-          // Tooltip card
-          Positioned(
-            left: 0,
-            right: 0,
-            top: tooltipTop,
-            bottom: tooltipBottom,
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 250),
-              transitionBuilder: (child, anim) =>
-                  FadeTransition(opacity: anim, child: child),
-              child: KeyedSubtree(
-                key: ValueKey(state.currentStep),
-                child: _TooltipCard(
-                  step: step,
-                  currentStep: state.currentStep,
-                  totalSteps: state.totalSteps,
-                  onNext: notifier.next,
-                  onSkip: notifier.skip,
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () {}, // swallow background taps
+          child: Stack(
+            children: [
+              // Dark overlay with spotlight cutout
+              CustomPaint(
+                size: availableSize,
+                painter: _SpotlightPainter(
+                  spotRect: spotRect,
+                  radius: step.spotlightRadius,
                 ),
               ),
-            ),
+
+              // Tooltip card — always anchored to the bottom of the body area.
+              // Align is coordinate-system agnostic so it always works correctly.
+              Align(
+                alignment: Alignment.bottomCenter,
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 250),
+                    transitionBuilder: (child, anim) =>
+                        FadeTransition(opacity: anim, child: child),
+                    child: KeyedSubtree(
+                      key: ValueKey(state.currentStep),
+                      child: _TooltipCard(
+                        step: step,
+                        currentStep: state.currentStep,
+                        totalSteps: state.totalSteps,
+                        onNext: notifier.next,
+                        onSkip: notifier.skip,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+              // Pulsing ring on the tap-a-verse step
+              if (step.targetKey == WalkthroughKeys.readerContent &&
+                  step.targetKey?.currentContext != null)
+                _PulseRing(
+                  center: Offset(
+                    spotRect.left + 60,
+                    spotRect.top + spotRect.height * 0.25,
+                  ),
+                ),
+
+              // Arrow pointing toward spotlight
+              if (step.targetKey?.currentContext != null)
+                Positioned(
+                  left: spotRect.center.dx
+                      .clamp(20.0, availableSize.width - 40)
+                      .toDouble(),
+                  bottom: spotIsInBottomHalf
+                      ? availableSize.height - spotRect.top + 4
+                      : 200, // ~above the card
+                  child: _Arrow(
+                    pointDown: !spotIsInBottomHalf,
+                  ),
+                ),
+            ],
           ),
-
-          // Pulsing ring on the long-press step to hint at the gesture
-          if (step.targetKey == WalkthroughKeys.readerContent &&
-              step.targetKey?.currentContext != null)
-            _PulseRing(
-              center: Offset(
-                spotRect.left + 60, // offset to a verse position
-                spotRect.top + spotRect.height * 0.25,
-              ),
-            ),
-
-          // Arrow pointing from tooltip toward spotlight
-          if (step.targetKey?.currentContext != null) ...[
-            if (tooltipBottom != null && !spotIsInBottomHalf)
-              // Tooltip at bottom, arrow points UP toward spotlight
-              Positioned(
-                left: spotRect.center.dx.clamp(20.0, screenSize.width - 40),
-                bottom: tooltipBottom - 20,
-                child: _Arrow(pointDown: false),
-              ),
-            if (tooltipBottom != null && spotIsInBottomHalf)
-              // Tooltip above spotlight, arrow points DOWN toward spotlight
-              Positioned(
-                left: spotRect.center.dx.clamp(20.0, screenSize.width - 40),
-                bottom: tooltipBottom - 20,
-                child: _Arrow(pointDown: true),
-              ),
-          ],
-        ],
-      ),
+        );
+      },
     );
   }
 }

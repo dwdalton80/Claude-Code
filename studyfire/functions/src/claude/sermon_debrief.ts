@@ -1,4 +1,116 @@
+import * as admin from "firebase-admin";
 import { getClaudeClient, MODELS, StudyLevel, studyLevelInstructions } from "./client";
+
+const db = () => admin.firestore();
+
+/**
+ * Maps common Bible book names (and abbreviations) to the Firestore document IDs
+ * used under bible/kjv/books/{bookId}. Must match the IDs used by the Flutter
+ * client's _bookIds map in reader_screen.dart.
+ */
+const BOOK_ID_MAP: Record<string, string> = {
+  // Old Testament
+  "genesis": "gen", "gen": "gen",
+  "exodus": "exo", "exo": "exo",
+  "leviticus": "lev", "lev": "lev",
+  "numbers": "num", "num": "num",
+  "deuteronomy": "deu", "deu": "deu",
+  "joshua": "jos", "jos": "jos",
+  "judges": "jdg", "jdg": "jdg",
+  "ruth": "rut", "rut": "rut",
+  "1 samuel": "1sa", "1samuel": "1sa", "1sa": "1sa",
+  "2 samuel": "2sa", "2samuel": "2sa", "2sa": "2sa",
+  "1 kings": "1ki", "1kings": "1ki", "1ki": "1ki",
+  "2 kings": "2ki", "2kings": "2ki", "2ki": "2ki",
+  "1 chronicles": "1ch", "1chronicles": "1ch", "1ch": "1ch",
+  "2 chronicles": "2ch", "2chronicles": "2ch", "2ch": "2ch",
+  "ezra": "ezr", "ezr": "ezr",
+  "nehemiah": "neh", "neh": "neh",
+  "esther": "est", "est": "est",
+  "job": "job",
+  "psalms": "psa", "psalm": "psa", "psa": "psa", "ps": "psa",
+  "proverbs": "pro", "pro": "pro",
+  "ecclesiastes": "ecc", "ecc": "ecc",
+  "song of solomon": "sng", "song of songs": "sng", "sng": "sng",
+  "isaiah": "isa", "isa": "isa",
+  "jeremiah": "jer", "jer": "jer",
+  "lamentations": "lam", "lam": "lam",
+  "ezekiel": "eze", "eze": "eze",
+  "daniel": "dan", "dan": "dan",
+  "hosea": "hos", "hos": "hos",
+  "joel": "jol", "jol": "jol",
+  "amos": "amo", "amo": "amo",
+  "obadiah": "oba", "oba": "oba",
+  "jonah": "jon", "jon": "jon",
+  "micah": "mic", "mic": "mic",
+  "nahum": "nam", "nam": "nam",
+  "habakkuk": "hab", "hab": "hab",
+  "zephaniah": "zep", "zep": "zep",
+  "haggai": "hag", "hag": "hag",
+  "zechariah": "zec", "zec": "zec",
+  "malachi": "mal", "mal": "mal",
+  // New Testament
+  "matthew": "mat", "matt": "mat", "mat": "mat",
+  "mark": "mrk", "mrk": "mrk",
+  "luke": "luk", "luk": "luk",
+  "john": "jhn", "jhn": "jhn",
+  "acts": "act", "act": "act",
+  "romans": "rom", "rom": "rom",
+  "1 corinthians": "1co", "1corinthians": "1co", "1co": "1co",
+  "2 corinthians": "2co", "2corinthians": "2co", "2co": "2co",
+  "galatians": "gal", "gal": "gal",
+  "ephesians": "eph", "eph": "eph",
+  "philippians": "php", "php": "php",
+  "colossians": "col", "col": "col",
+  "1 thessalonians": "1th", "1thessalonians": "1th", "1th": "1th",
+  "2 thessalonians": "2th", "2thessalonians": "2th", "2th": "2th",
+  "1 timothy": "1ti", "1timothy": "1ti", "1ti": "1ti",
+  "2 timothy": "2ti", "2timothy": "2ti", "2ti": "2ti",
+  "titus": "tit", "tit": "tit",
+  "philemon": "phm", "phm": "phm",
+  "hebrews": "heb", "heb": "heb",
+  "james": "jas", "jas": "jas",
+  "1 peter": "1pe", "1peter": "1pe", "1pe": "1pe",
+  "2 peter": "2pe", "2peter": "2pe", "2pe": "2pe",
+  "1 john": "1jn", "1john": "1jn", "1jn": "1jn",
+  "2 john": "2jn", "2john": "2jn", "2jn": "2jn",
+  "3 john": "3jn", "3john": "3jn", "3jn": "3jn",
+  "jude": "jud", "jud": "jud",
+  "revelation": "rev", "rev": "rev",
+};
+
+/**
+ * Fetches verse text from Firestore for a human-readable reference like "John 3:16".
+ * Returns null if lookup fails — debrief still works without it.
+ */
+async function fetchVerseText(ref: string): Promise<string | null> {
+  try {
+    // Normalise: "John 3:16" → book=jhn, chapter=3, verse=16
+    const match = ref.trim().match(/^(.+?)\s+(\d+):(\d+)(?:-(\d+))?$/);
+    if (!match) return null;
+    const bookKey = match[1].toLowerCase().trim();
+    const bookId = BOOK_ID_MAP[bookKey];
+    if (!bookId) return null; // unknown book name
+    const chapter = parseInt(match[2], 10);
+    const verseStart = parseInt(match[3], 10);
+    const verseEnd = match[4] ? parseInt(match[4], 10) : verseStart;
+
+    const snap = await db()
+      .collection("bible").doc("kjv")
+      .collection("books").doc(bookId)
+      .collection("chapters").doc(String(chapter))
+      .collection("verses")
+      .where("verseNumber", ">=", verseStart)
+      .where("verseNumber", "<=", verseEnd)
+      .orderBy("verseNumber")
+      .get();
+
+    if (snap.empty) return null;
+    return snap.docs.map(d => d.data().text ?? d.data().verseText ?? "").join(" ").trim();
+  } catch {
+    return null;
+  }
+}
 
 export interface SermonDebrief {
   applicationPoints: ApplicationPoint[];
@@ -35,6 +147,18 @@ export async function generateSermonDebrief(ctx: DebriefContext): Promise<Sermon
     ? `\n\nAdditional context from the user:\n${ctx.followUpAnswers.join("\n")}`
     : "";
 
+  // Pre-fetch verse texts for any scripture refs the user tagged
+  let scriptureBlock = "";
+  if (ctx.scriptureRefs.length > 0) {
+    const fetched = await Promise.all(
+      ctx.scriptureRefs.map(async (ref) => {
+        const text = await fetchVerseText(ref);
+        return text ? `${ref}: "${text}"` : ref;
+      })
+    );
+    scriptureBlock = `\nScripture texts:\n${fetched.join("\n")}`;
+  }
+
   const response = await client.messages.create({
     model: MODELS.haiku,
     max_tokens: 1000,
@@ -48,7 +172,7 @@ You are helping a user process and apply what they heard at church or studied in
 
 ${ctx.sermonTitle ? `Sermon: "${ctx.sermonTitle}"` : ""}
 ${ctx.speaker ? `Speaker: ${ctx.speaker}` : ""}
-${ctx.scriptureRefs.length ? `Scripture: ${ctx.scriptureRefs.join(", ")}` : ""}
+${scriptureBlock || (ctx.scriptureRefs.length ? `Scripture: ${ctx.scriptureRefs.join(", ")}` : "")}
 
 User's notes:
 "${ctx.noteContent}"${additionalContext}

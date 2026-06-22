@@ -5,7 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'walkthrough_keys.dart';
 
 // ── Prefs key ─────────────────────────────────────────────────────────────────
-const _kWalkthroughDone = 'walkthrough_done_v1';
+const _kWalkthroughDone = 'walkthrough_done_v3';
 
 // ── Step model ────────────────────────────────────────────────────────────────
 
@@ -77,9 +77,10 @@ final _steps = <WalkthroughStep>[
   ),
   WalkthroughStep(
     title: "Study Groups 👥",
-    body: "Study with friends or a Bible study class! Create a group or join "
-        "one with an invite code. Share notes, post questions, track each "
-        "other's streaks on the leaderboard, and grow together.",
+    body: "Study with your church or Bible study class! Create a group or join "
+        "one with an invite code.\n\n"
+        "Share notes, post questions, pray for each other 🙏, track streaks "
+        "on the leaderboard, and grow together.",
     tabPath: '/groups',
     targetKey: WalkthroughKeys.groupsList,
     placement: TooltipPlacement.above,
@@ -97,11 +98,10 @@ final _steps = <WalkthroughStep>[
     spotlightRadius: 16,
   ),
   WalkthroughStep(
-    title: "The Bible Reader 📖",
-    body: "Read through the entire Bible here. Tap the title bar to jump to "
-        "any book and chapter, or switch translations.\n\n"
-        "See the ✨ Ask AI button in the toolbar? Tap it anytime to get "
-        "commentary, background, and deeper insight on the whole chapter.",
+    title: "The Bible 📖",
+    body: "Tap the title bar to jump to any book, chapter, or translation.\n\n"
+        "Tap any verse to highlight it, ask AI for commentary, or save it "
+        "to your Verse Vault. Tap New Note to journal right from what you're reading.",
     tabPath: '/reader',
     targetKey: WalkthroughKeys.readerToolbar,
     placement: TooltipPlacement.below,
@@ -147,6 +147,18 @@ final _steps = <WalkthroughStep>[
         "practicing and move through all five mastery stages.",
     tabPath: '/profile',
     targetKey: WalkthroughKeys.profileVerseVault,
+    placement: TooltipPlacement.above,
+    spotlightPadding: 12,
+    spotlightRadius: 16,
+  ),
+  WalkthroughStep(
+    title: "Your Notes & Journal 📝",
+    body: "Your sermon notes and Bible study entries live here.\n\n"
+        "Tap any note to read it, or tap the arrow to open your full "
+        "journal — where you can add Sermon Notes, Personal Study entries, "
+        "and use ✨ AI to unpack what you learned.",
+    tabPath: '/profile',
+    targetKey: WalkthroughKeys.profileNotes,
     placement: TooltipPlacement.above,
     spotlightPadding: 12,
     spotlightRadius: 16,

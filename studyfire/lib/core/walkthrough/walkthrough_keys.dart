@@ -26,4 +26,5 @@ class WalkthroughKeys {
   static final profileHero       = GlobalKey(debugLabel: 'wt_profileHero');
   static final profileBadges     = GlobalKey(debugLabel: 'wt_profileBadges');
   static final profileVerseVault = GlobalKey(debugLabel: 'wt_profileVerseVault');
+  static final profileNotes      = GlobalKey(debugLabel: 'wt_profileNotes');
 }

@@ -92,8 +92,57 @@ class _JournalScreenState extends ConsumerState<JournalScreen> with SingleTicker
   }
 
   void _openNewNote(BuildContext context) {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const NoteEditorScreen()),
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.cardDark,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 36, height: 4,
+                margin: const EdgeInsets.only(bottom: 20),
+                decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)),
+              ),
+            ),
+            Text('New Journal Entry', style: AppTypography.labelLarge),
+            const SizedBox(height: 16),
+            _NewEntryOption(
+              emoji: '⛪',
+              title: 'Sermon Notes',
+              subtitle: 'Capture notes during a service — AI organizes them for you',
+              onTap: () {
+                Navigator.pop(ctx);
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const NoteEditorScreen(initialType: JournalType.sermon),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 10),
+            _NewEntryOption(
+              emoji: '📖',
+              title: 'Personal Study',
+              subtitle: 'Reflect on a verse, passage, or topic',
+              onTap: () {
+                Navigator.pop(ctx);
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const NoteEditorScreen(initialType: JournalType.personalStudy),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -284,8 +333,9 @@ class NoteEditorScreen extends ConsumerStatefulWidget {
   final JournalEntry? entry;
   final String? verseRef;
   final String? verseText;
+  final JournalType? initialType;
 
-  const NoteEditorScreen({super.key, this.entry, this.verseRef, this.verseText});
+  const NoteEditorScreen({super.key, this.entry, this.verseRef, this.verseText, this.initialType});
 
   @override
   ConsumerState<NoteEditorScreen> createState() => _NoteEditorScreenState();
@@ -296,7 +346,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   final _contentCtrl = TextEditingController();
   final _speakerCtrl = TextEditingController();
   final List<String> _scriptureRefs = [];
-  JournalType _type = JournalType.personalStudy;
+  late JournalType _type;
   DateTime _date = DateTime.now();
   bool _saved = false;
 
@@ -306,6 +356,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   @override
   void initState() {
     super.initState();
+    _type = widget.initialType ?? JournalType.personalStudy;
     _contentCtrl.addListener(_onContentChanged);
     _contentCtrl.addListener(_onAnyEdit);
     _titleCtrl.addListener(_onAnyEdit);
@@ -321,7 +372,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
       _date = e.date;
     } else if (widget.verseRef != null) {
       _scriptureRefs.add(widget.verseRef!);
-      _type = JournalType.personalStudy;
+      _type = widget.initialType ?? JournalType.personalStudy;
       if (widget.verseText != null) {
         _verseTexts[widget.verseRef!] = widget.verseText!;
       }
@@ -1273,6 +1324,52 @@ class _MemoryVerseListState extends State<_MemoryVerseList> {
           ),
         );
       },
+    );
+  }
+}
+
+class _NewEntryOption extends StatelessWidget {
+  final String emoji;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  const _NewEntryOption({
+    required this.emoji,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.white10),
+        ),
+        child: Row(
+          children: [
+            Text(emoji, style: const TextStyle(fontSize: 28)),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: AppTypography.labelMedium),
+                  const SizedBox(height: 2),
+                  Text(subtitle, style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary)),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: AppColors.textSecondary, size: 20),
+          ],
+        ),
+      ),
     );
   }
 }

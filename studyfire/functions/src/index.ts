@@ -11,6 +11,7 @@ import {
   sendStreakReminders,
   sendFocusCompanion,
   sendGroupDigests,
+  sendPushNotification,
 } from "./notifications/push_notifications";
 
 admin.initializeApp();
@@ -398,6 +399,84 @@ export const onXpUpdated = functions.firestore
           )
       )
     );
+  });
+
+// ── Firestore Triggers: Prayer Request Notifications ─────────────────────────
+
+/**
+ * When a new prayer request is created, notify all group members.
+ */
+export const onPrayerRequestCreated = functions.firestore
+  .document("groups/{groupId}/prayers/{prayerId}")
+  .onCreate(async (snap, context) => {
+    const { groupId } = context.params;
+    const prayer = snap.data();
+    const authorName: string = prayer.authorName ?? "Someone";
+    const text: string = prayer.text ?? "";
+    const preview = text.length > 80 ? text.substring(0, 80) + "…" : text;
+
+    // Get group name and members
+    const [groupSnap, membersSnap] = await Promise.all([
+      db.collection("groups").doc(groupId).get(),
+      db.collection("groups").doc(groupId).collection("members").get(),
+    ]);
+    const groupName: string = (groupSnap.data()?.displayName ?? groupSnap.data()?.name ?? "Your Group") as string;
+
+    const sends: Promise<void>[] = [];
+    for (const memberDoc of membersSnap.docs) {
+      const uid = memberDoc.id;
+      if (uid === prayer.authorUid) continue; // don't notify the poster
+      if (memberDoc.data()?.mutedNotifications === true) continue;
+      sends.push(
+        sendPushNotification({
+          uid,
+          title: `🙏 ${authorName} in ${groupName}`,
+          body: preview,
+          data: { type: "prayer_request", groupId, prayerId: snap.id },
+        })
+      );
+    }
+    await Promise.allSettled(sends);
+  });
+
+/**
+ * When a prayer is marked answered, notify all group members so they can
+ * celebrate together. The author already knows (they tapped the button), so
+ * they are excluded from the notification batch.
+ */
+export const onPrayerAnswered = functions.firestore
+  .document("groups/{groupId}/prayers/{prayerId}")
+  .onUpdate(async (change, context) => {
+    const before = change.before.data();
+    const after = change.after.data();
+    // Only fire when answered flips true
+    if (before.answered || !after.answered) return;
+
+    const { groupId } = context.params;
+    const authorUid: string = after.authorUid;
+    const authorName: string = after.authorName ?? "Someone";
+
+    const [groupSnap, membersSnap] = await Promise.all([
+      db.collection("groups").doc(groupId).get(),
+      db.collection("groups").doc(groupId).collection("members").get(),
+    ]);
+    const groupName: string = (groupSnap.data()?.displayName ?? groupSnap.data()?.name ?? "Your Group") as string;
+
+    const sends: Promise<void>[] = [];
+    for (const memberDoc of membersSnap.docs) {
+      const uid = memberDoc.id;
+      if (uid === authorUid) continue; // author already knows — they tapped the button
+      if (memberDoc.data()?.mutedNotifications === true) continue;
+      sends.push(
+        sendPushNotification({
+          uid,
+          title: `✅ Prayer Answered in ${groupName}!`,
+          body: `${authorName}'s prayer request was answered. Praise God! 🙌`,
+          data: { type: "prayer_answered", groupId, prayerId: change.after.id },
+        })
+      );
+    }
+    await Promise.allSettled(sends);
   });
 
 // ── Firestore Triggers: Auto-Post to Group Feed ──────────────────────────────

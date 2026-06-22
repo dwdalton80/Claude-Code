@@ -112,6 +112,7 @@ class ProfileScreen extends ConsumerWidget {
           const SliverToBoxAdapter(child: _SectionDivider()),
           SliverToBoxAdapter(
             child: _NotesSection(
+              key: WalkthroughKeys.profileNotes,
               uid: FirebaseAuth.instance.currentUser?.uid ?? '',
             ),
           ),
@@ -1035,7 +1036,7 @@ class _VerseVaultSection extends StatelessWidget {
 
 class _NotesSection extends StatelessWidget {
   final String uid;
-  const _NotesSection({required this.uid});
+  const _NotesSection({super.key, required this.uid});
 
   @override
   Widget build(BuildContext context) {

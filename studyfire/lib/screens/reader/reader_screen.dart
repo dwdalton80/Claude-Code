@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -18,6 +19,7 @@ import '../../widgets/common/flame_cta_button.dart';
 import '../../widgets/common/premium_gate.dart';
 import '../../widgets/common/progress_bar.dart';
 import '../journal/journal_screen.dart';
+import '../../models/journal_entry.dart';
 import '../../models/memory_verse.dart';
 
 enum HighlightColor { yellow, orange, green, blue, purple, pink, red }
@@ -102,6 +104,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   bool _sheetOpen = false;
   final ValueNotifier<List<BibleVerse>> _selectionNotifier = ValueNotifier([]);
 
+  StreamSubscription<void>? _positionSub;
+
   @override
   void initState() {
     super.initState();
@@ -116,13 +120,14 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     // Focus mode (chrome auto-hide) is no longer triggered automatically —
     // the toolbar stays always visible.
 
-    Stream.periodic(const Duration(seconds: 10)).listen((_) {
+    _positionSub = Stream.periodic(const Duration(seconds: 10)).listen((_) {
       if (mounted) _savePosition();
     });
   }
 
   @override
   void dispose() {
+    _positionSub?.cancel();
     _scrollController.dispose();
     _selectionNotifier.dispose();
     super.dispose();
@@ -263,57 +268,61 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     _selectionNotifier.value = [];
   }
 
-  void _showInlineNote(BibleVerse verse) {
+  Future<void> _showInlineNote(BibleVerse verse) async {
     final existing = _notes[verse.id] ?? '';
     final ctrl = TextEditingController(text: existing);
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: AppColors.cardDark,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (_) => Padding(
-        padding: EdgeInsets.only(
-          left: 20, right: 20, top: 20,
-          bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+    try {
+      await showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: AppColors.cardDark,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(verse.reference,
-                style: AppTypography.labelSmall.copyWith(color: AppColors.warmGold)),
-            const SizedBox(height: 8),
-            Text('"${verse.text}"',
-                style: AppTypography.bodySmall.copyWith(fontStyle: FontStyle.italic)),
-            const SizedBox(height: 16),
-            TextField(
-              controller: ctrl,
-              autofocus: true,
-              maxLines: 3,
-              style: AppTypography.bodyMedium,
-              decoration: const InputDecoration(hintText: 'Add a note…'),
-            ),
-            const SizedBox(height: 12),
-            FlameCTAButton(
-              label: 'Save Note',
-              height: 44,
-              onPressed: () {
-                if (mounted) setState(() => _notes[verse.id] = ctrl.text);
-                _db.saveNote(
-                  uid: widget.uid,
-                  verseId: verse.id,
-                  note: ctrl.text,
-                  reference: verse.reference,
-                );
-                Navigator.pop(context);
-              },
-            ),
-          ],
+        builder: (_) => Padding(
+          padding: EdgeInsets.only(
+            left: 20, right: 20, top: 20,
+            bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(verse.reference,
+                  style: AppTypography.labelSmall.copyWith(color: AppColors.warmGold)),
+              const SizedBox(height: 8),
+              Text('"${verse.text}"',
+                  style: AppTypography.bodySmall.copyWith(fontStyle: FontStyle.italic)),
+              const SizedBox(height: 16),
+              TextField(
+                controller: ctrl,
+                autofocus: true,
+                maxLines: 3,
+                style: AppTypography.bodyMedium,
+                decoration: const InputDecoration(hintText: 'Add a note…'),
+              ),
+              const SizedBox(height: 12),
+              FlameCTAButton(
+                label: 'Save Note',
+                height: 44,
+                onPressed: () {
+                  if (mounted) setState(() => _notes[verse.id] = ctrl.text);
+                  _db.saveNote(
+                    uid: widget.uid,
+                    verseId: verse.id,
+                    note: ctrl.text,
+                    reference: verse.reference,
+                  );
+                  Navigator.pop(context);
+                },
+              ),
+            ],
+          ),
         ),
-      ),
-    );
+      );
+    } finally {
+      ctrl.dispose();
+    }
   }
 
   static const _freeMemoryVerseLimit = 3;
@@ -633,6 +642,61 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
             ),
 
             // ── Persistent selection panel (non-modal so list stays tappable) ──
+            if (!_sheetOpen)
+              Positioned(
+                right: 16,
+                bottom: 16,
+                child: SafeArea(
+                  top: false,
+                  child: AnimatedOpacity(
+                    opacity: _chromVisible ? 1.0 : 0.0,
+                    duration: const Duration(milliseconds: 200),
+                    child: GestureDetector(
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => NoteEditorScreen(
+                              initialType: JournalType.personalStudy,
+                              verseRef: _verses.isNotEmpty
+                                  ? '$_currentBook $_currentChapter'
+                                  : null,
+                            ),
+                          ),
+                        );
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                        decoration: BoxDecoration(
+                          color: AppColors.cardDark,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: Colors.white12),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.4),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.edit_note, size: 16, color: AppColors.warmWhite),
+                            const SizedBox(width: 6),
+                            Text(
+                              'New Note',
+                              style: AppTypography.bodySmall.copyWith(
+                                color: AppColors.warmWhite,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             if (_sheetOpen)
               Positioned(
                 left: 0, right: 0, bottom: 0,
@@ -2137,11 +2201,7 @@ class _ReaderToolbar extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       child: Row(
         children: [
-          IconButton(
-            icon: const Icon(Icons.arrow_back_ios, size: 18),
-            color: AppColors.warmWhite,
-            onPressed: onBack,
-          ),
+          const SizedBox(width: 8),
           Expanded(
             child: GestureDetector(
               onTap: onTitleTap,
@@ -2864,58 +2924,62 @@ class _AiQuestionPickerSheetState extends State<_AiQuestionPickerSheet> {
 
   Future<void> _askBibleSays() async {
     final ctrl = TextEditingController();
-    final topic = await showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: AppColors.cardDark,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(
-          left: 20, right: 20, top: 20,
-          bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+    try {
+      final topic = await showModalBottomSheet<String>(
+        context: context,
+        backgroundColor: AppColors.cardDark,
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 36, height: 4,
-                margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)),
-              ),
-            ),
-            Text('What does the Bible say about…', style: AppTypography.labelLarge),
-            const SizedBox(height: 12),
-            TextField(
-              controller: ctrl,
-              autofocus: true,
-              style: AppTypography.bodyMedium.copyWith(color: AppColors.warmWhite),
-              decoration: InputDecoration(
-                hintText: 'e.g. anxiety, forgiveness, marriage',
-                hintStyle: TextStyle(color: AppColors.textSecondary),
-                filled: true,
-                fillColor: AppColors.surface,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-                suffixIcon: IconButton(
-                  icon: const Icon(Icons.send_rounded, color: AppColors.warmGold, size: 20),
-                  onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+        builder: (ctx) => Padding(
+          padding: EdgeInsets.only(
+            left: 20, right: 20, top: 20,
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 36, height: 4,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)),
                 ),
               ),
-              onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
-              textInputAction: TextInputAction.go,
-            ),
-          ],
+              Text('What does the Bible say about…', style: AppTypography.labelLarge),
+              const SizedBox(height: 12),
+              TextField(
+                controller: ctrl,
+                autofocus: true,
+                style: AppTypography.bodyMedium.copyWith(color: AppColors.warmWhite),
+                decoration: InputDecoration(
+                  hintText: 'e.g. anxiety, forgiveness, marriage',
+                  hintStyle: TextStyle(color: AppColors.textSecondary),
+                  filled: true,
+                  fillColor: AppColors.surface,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                  suffixIcon: IconButton(
+                    icon: const Icon(Icons.send_rounded, color: AppColors.warmGold, size: 20),
+                    onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+                  ),
+                ),
+                onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+                textInputAction: TextInputAction.go,
+              ),
+            ],
+          ),
         ),
-      ),
-    );
-    if (topic == null || topic.isEmpty) return;
-    _send('What does the Bible say about $topic?');
+      );
+      if (topic == null || topic.isEmpty) return;
+      _send('What does the Bible say about $topic?');
+    } finally {
+      ctrl.dispose();
+    }
   }
 
   @override

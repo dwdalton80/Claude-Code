@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deepStudyVerse = exports.interpretVerse = exports.searchVerses = exports.checkVerseBadges = exports.getVerseWordStudy = exports.askVerseQuestion = exports.getWordStudy = exports.onStreakMilestone = exports.onMemoryVerseMastered = exports.onMemoryVerseAdded = exports.onBadgeEarned = exports.onXpUpdated = exports.registerFcmToken = exports.updateMemoryVerse = exports.recordSessionEnd = exports.suggestTitle = exports.generateDebrief = exports.getAiStudy = exports.sendDailyGroupDigests = exports.sendMorningFocusCompanion = exports.sendEveningStreakReminders = exports.weeklyGraceReplenish = exports.generateDailyCache = exports.generateDailySpark = void 0;
+exports.deepStudyVerse = exports.interpretVerse = exports.searchVerses = exports.checkVerseBadges = exports.getVerseWordStudy = exports.askVerseQuestion = exports.getWordStudy = exports.onStreakMilestone = exports.onMemoryVerseMastered = exports.onMemoryVerseAdded = exports.onBadgeEarned = exports.onPrayerAnswered = exports.onPrayerRequestCreated = exports.onXpUpdated = exports.registerFcmToken = exports.updateMemoryVerse = exports.recordSessionEnd = exports.suggestTitle = exports.generateDebrief = exports.getAiStudy = exports.sendDailyGroupDigests = exports.sendMorningFocusCompanion = exports.sendEveningStreakReminders = exports.weeklyGraceReplenish = exports.generateDailyCache = exports.generateDailySpark = void 0;
 const functions = __importStar(require("firebase-functions/v1"));
 const admin = __importStar(require("firebase-admin"));
 const spark_questions_1 = require("./claude/spark_questions");
@@ -351,6 +351,77 @@ exports.onXpUpdated = functions.firestore
         shareCount: 0,
     }, { merge: true } // idempotent — safe if trigger fires more than once
     )));
+});
+// ── Firestore Triggers: Prayer Request Notifications ─────────────────────────
+/**
+ * When a new prayer request is created, notify all group members.
+ */
+exports.onPrayerRequestCreated = functions.firestore
+    .document("groups/{groupId}/prayers/{prayerId}")
+    .onCreate(async (snap, context) => {
+    const { groupId } = context.params;
+    const prayer = snap.data();
+    const authorName = prayer.authorName ?? "Someone";
+    const text = prayer.text ?? "";
+    const preview = text.length > 80 ? text.substring(0, 80) + "…" : text;
+    // Get group name and members
+    const [groupSnap, membersSnap] = await Promise.all([
+        db.collection("groups").doc(groupId).get(),
+        db.collection("groups").doc(groupId).collection("members").get(),
+    ]);
+    const groupName = (groupSnap.data()?.displayName ?? groupSnap.data()?.name ?? "Your Group");
+    const sends = [];
+    for (const memberDoc of membersSnap.docs) {
+        const uid = memberDoc.id;
+        if (uid === prayer.authorUid)
+            continue; // don't notify the poster
+        if (memberDoc.data()?.mutedNotifications === true)
+            continue;
+        sends.push((0, push_notifications_1.sendPushNotification)({
+            uid,
+            title: `🙏 ${authorName} in ${groupName}`,
+            body: preview,
+            data: { type: "prayer_request", groupId, prayerId: snap.id },
+        }));
+    }
+    await Promise.allSettled(sends);
+});
+/**
+ * When a prayer is marked answered, notify all group members so they can
+ * celebrate together. The author already knows (they tapped the button), so
+ * they are excluded from the notification batch.
+ */
+exports.onPrayerAnswered = functions.firestore
+    .document("groups/{groupId}/prayers/{prayerId}")
+    .onUpdate(async (change, context) => {
+    const before = change.before.data();
+    const after = change.after.data();
+    // Only fire when answered flips true
+    if (before.answered || !after.answered)
+        return;
+    const { groupId } = context.params;
+    const authorUid = after.authorUid;
+    const authorName = after.authorName ?? "Someone";
+    const [groupSnap, membersSnap] = await Promise.all([
+        db.collection("groups").doc(groupId).get(),
+        db.collection("groups").doc(groupId).collection("members").get(),
+    ]);
+    const groupName = (groupSnap.data()?.displayName ?? groupSnap.data()?.name ?? "Your Group");
+    const sends = [];
+    for (const memberDoc of membersSnap.docs) {
+        const uid = memberDoc.id;
+        if (uid === authorUid)
+            continue; // author already knows — they tapped the button
+        if (memberDoc.data()?.mutedNotifications === true)
+            continue;
+        sends.push((0, push_notifications_1.sendPushNotification)({
+            uid,
+            title: `✅ Prayer Answered in ${groupName}!`,
+            body: `${authorName}'s prayer request was answered. Praise God! 🙌`,
+            data: { type: "prayer_answered", groupId, prayerId: change.after.id },
+        }));
+    }
+    await Promise.allSettled(sends);
 });
 // ── Firestore Triggers: Auto-Post to Group Feed ──────────────────────────────
 /**
