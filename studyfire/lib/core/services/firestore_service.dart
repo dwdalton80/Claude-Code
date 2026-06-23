@@ -379,6 +379,12 @@ class FirestoreService {
   }
 
   Future<String> createGroup(Group group, String uid, AutoPostSettings settings) async {
+    final userDoc = await _db.collection('users').doc(uid).get();
+    final profileData = userDoc.data()?['profile'] as Map<String, dynamic>? ?? {};
+    final displayName = (profileData['name'] as String?)?.isNotEmpty == true
+        ? profileData['name'] as String
+        : FirebaseAuth.instance.currentUser?.displayName ?? 'Member';
+
     final ref = _db.collection('groups').doc();
     await ref.set(group.toFirestore());
     await ref.collection('members').doc(uid).set({
@@ -386,6 +392,7 @@ class FirestoreService {
       'role': GroupRole.creator.name,
       'autoPostSettings': settings.toMap(),
       'mutedNotifications': false,
+      'displayName': displayName,
       'weeklyXp': 0,
       'streak': 0,
       'badgeCount': 0,

@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../models/user_profile.dart';
 import '../constants/xp_rewards.dart';
+import 'group_activity_service.dart';
 
 class XpService {
   final _firestore = FirebaseFirestore.instance;
@@ -57,6 +58,9 @@ class XpService {
         newLevel: leveledUp ? newLevelData : null,
       );
     });
+
+    // Sync XP and display name to all group member docs in the background
+    GroupActivityService().updateMemberWeeklyXp(uid, pending).catchError((_) {});
 
     return result;
   }
