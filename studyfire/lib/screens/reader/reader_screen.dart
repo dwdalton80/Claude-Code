@@ -557,7 +557,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                     ),
                   ),
                   Expanded(
-                    child: Column(
+                    child: Stack(
+                      children: [
+                      Column(
                       key: WalkthroughKeys.readerContent,
                       children: [
                         if (_compareMode)
@@ -581,27 +583,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                               ],
                             ),
                           )
-                        else if (_showHint)
-                          GestureDetector(
-                            onTap: _dismissHint,
-                            child: Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                              color: AppColors.warmGold.withOpacity(0.15),
-                              child: Row(
-                                children: [
-                                  const Text('💡 ', style: TextStyle(fontSize: 14)),
-                                  const Expanded(
-                                    child: Text(
-                                      'Tap a verse to select • tap more to add • use the panel below',
-                                      style: TextStyle(fontSize: 12, color: AppColors.warmGold),
-                                    ),
-                                  ),
-                                  const Icon(Icons.close, size: 14, color: AppColors.warmGold),
-                                ],
-                              ),
-                            ),
-                          ),
                         Expanded(
                           child: GestureDetector(
                             onHorizontalDragEnd: (details) {
@@ -640,6 +621,32 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                         ),
                       ],
                     ),
+                    if (_showHint)
+                      Positioned(
+                        top: 0, left: 0, right: 0,
+                        child: GestureDetector(
+                          onTap: _dismissHint,
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                            color: AppColors.warmGold.withOpacity(0.15),
+                            child: Row(
+                              children: [
+                                const Text('💡 ', style: TextStyle(fontSize: 14)),
+                                const Expanded(
+                                  child: Text(
+                                    'Tap a verse to select • tap more to add • use the panel below',
+                                    style: TextStyle(fontSize: 12, color: AppColors.warmGold),
+                                  ),
+                                ),
+                                const Icon(Icons.close, size: 14, color: AppColors.warmGold),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                   ),
                 ],
               ),
@@ -821,7 +828,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
           children: [
             const Text('Bible Version', style: AppTypography.labelLarge),
             const SizedBox(height: 16),
-            ...['kjv', 'csb', 'niv'].map((v) => ListTile(
+            ...['kjv', 'csb', 'niv', 'asv'].map((v) => ListTile(
                   title: Text(v.toUpperCase(), style: AppTypography.bodyLarge),
                   trailing: _currentVersion == v
                       ? const Icon(Icons.check, color: AppColors.warmGold)
@@ -850,7 +857,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   void _showComparePicker() {
     String selA = _compareVersionA;
     String selB = _compareVersionB;
-    const versions = ['kjv', 'niv', 'csb'];
+    const versions = ['kjv', 'niv', 'csb', 'asv'];
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.cardDark,
