@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deepStudyVerse = exports.interpretVerse = exports.searchVerses = exports.checkVerseBadges = exports.getVerseWordStudy = exports.askVerseQuestion = exports.getWordStudy = exports.onStreakMilestone = exports.onMemoryVerseMastered = exports.onMemoryVerseAdded = exports.onBadgeEarned = exports.onPrayerAnswered = exports.onPrayerRequestCreated = exports.onXpUpdated = exports.registerFcmToken = exports.updateMemoryVerse = exports.recordSessionEnd = exports.suggestTitle = exports.generateDebrief = exports.getAiStudy = exports.sendDailyGroupDigests = exports.sendMorningFocusCompanion = exports.sendEveningStreakReminders = exports.weeklyGraceReplenish = exports.generateDailyCache = exports.generateDailySpark = void 0;
+exports.deepStudyVerse = exports.interpretVerse = exports.searchVerses = exports.checkVerseBadges = exports.getVerseWordStudy = exports.askVerseQuestion = exports.getWordStudy = exports.onStreakMilestone = exports.onMemoryVerseMastered = exports.onMemoryVerseAdded = exports.onBadgeEarned = exports.onPrayerAnswered = exports.onPrayerRequestCreated = exports.onXpUpdated = exports.registerFcmToken = exports.updateMemoryVerse = exports.recordSessionEnd = exports.suggestTitle = exports.generateDebrief = exports.getAiStudy = exports.sendDailyGroupDigests = exports.sendMorningFocusCompanion = exports.sendEveningStreakReminders = exports.weeklyGraceReplenish = exports.generateDailyDevotional = exports.generateDailyCache = exports.generateDailySpark = void 0;
 const functions = __importStar(require("firebase-functions/v1"));
 const admin = __importStar(require("firebase-admin"));
 const spark_questions_1 = require("./claude/spark_questions");
@@ -118,6 +118,57 @@ exports.generateDailyCache = functions.pubsub.schedule("30 2 * * *").onRun(async
     catch (err) {
         functions.logger.error("Word of day generation failed", err);
     }
+});
+/**
+ * Generates a short daily devotional (reflection, prayer prompt, application question)
+ * tied to today's Quest passage. Cached in sparkcache/{today}.devotional so the app
+ * can read it without a per-user Claude call.
+ */
+exports.generateDailyDevotional = functions.pubsub.schedule("10 2 * * *").onRun(async () => {
+    functions.logger.info("Generating daily devotional");
+    const today = dateKey(new Date());
+    const manifest = await db.collection("sparkcache").doc(today).get();
+    if (!manifest.exists) {
+        functions.logger.warn("No spark manifest yet — skipping devotional");
+        return;
+    }
+    const { passageId, reference } = manifest.data();
+    const sparkDoc = await db
+        .collection("sparkcache").doc(today)
+        .collection(passageId).doc("kjv").get();
+    if (!sparkDoc.exists) {
+        functions.logger.warn("No KJV spark doc — skipping devotional");
+        return;
+    }
+    const passageText = sparkDoc.data().text;
+    const client = (0, client_1.getClaudeClient)();
+    const response = await client.messages.create({
+        model: client_1.MODELS.haiku,
+        max_tokens: 500,
+        system: `You are a daily devotional writer for StudyFire, a Christian Bible study app affiliated with Joshua's Crossing Church in Denison, TX.
+Core beliefs: Scripture is God's infallible Word; salvation is through faith in Jesus alone; God is personal and loving; the Church is the bride of Christ.
+Write warm, concise devotionals that help busy people encounter God in under 2 minutes.
+Always respond with valid JSON only — no markdown fences, no extra text.`,
+        messages: [{
+                role: "user",
+                content: `Write a brief daily devotional for this verse:
+
+${reference}: "${passageText}"
+
+Return ONLY this JSON:
+{
+  "reflection": "3-4 warm, encouraging sentences that unpack the verse's meaning and why it matters today.",
+  "prayerPrompt": "A single sentence beginning with 'Lord,' that turns the verse into a personal prayer.",
+  "applicationQuestion": "One practical, introspective question to carry into the day — starts with a verb (e.g. 'Where', 'How', 'What')."
+}`,
+            }],
+    });
+    const raw = response.content[0].text.trim();
+    const start = raw.indexOf("{");
+    const end = raw.lastIndexOf("}");
+    const devotional = JSON.parse(raw.substring(start, end + 1));
+    await db.collection("sparkcache").doc(today).set({ devotional, devotionalGeneratedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+    functions.logger.info("Daily devotional generated", { reference });
 });
 /**
  * Replenishes grace day tokens every Monday.

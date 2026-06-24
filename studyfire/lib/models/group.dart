@@ -281,6 +281,66 @@ class PrayerRequest {
       };
 }
 
+// ── Group Challenge ───────────────────────────────────────────────────────────
+
+/// challenge types:
+///   'weekly_xp_race'  — compete for most XP this week (sorted leaderboard)
+///   'streak_hold'     — every member keeps a streak >= goal days
+///   'group_xp_goal'   — group collectively hits goal XP together
+class GroupChallenge {
+  final String id;
+  final String title;
+  final String type;
+  final int goal;
+  final DateTime startDate;
+  final DateTime endDate;
+  final String createdBy;
+  final String createdByName;
+  final DateTime createdAt;
+
+  const GroupChallenge({
+    required this.id,
+    required this.title,
+    required this.type,
+    required this.goal,
+    required this.startDate,
+    required this.endDate,
+    required this.createdBy,
+    required this.createdByName,
+    required this.createdAt,
+  });
+
+  bool get isActive =>
+      DateTime.now().isAfter(startDate) && DateTime.now().isBefore(endDate);
+  bool get isExpired => DateTime.now().isAfter(endDate);
+
+  factory GroupChallenge.fromFirestore(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>;
+    return GroupChallenge(
+      id: doc.id,
+      title: data['title'] as String? ?? 'Challenge',
+      type: data['type'] as String? ?? 'weekly_xp_race',
+      goal: (data['goal'] as num?)?.toInt() ?? 100,
+      startDate: (data['startDate'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      endDate: (data['endDate'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      createdBy: data['createdBy'] as String? ?? '',
+      createdByName: data['createdByName'] as String? ?? 'Creator',
+      createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+    );
+  }
+
+  Map<String, dynamic> toFirestore() => {
+        'title': title,
+        'type': type,
+        'goal': goal,
+        'startDate': Timestamp.fromDate(startDate),
+        'endDate': Timestamp.fromDate(endDate),
+        'createdBy': createdBy,
+        'createdByName': createdByName,
+        'createdAt': Timestamp.fromDate(createdAt),
+      };
+}
+
 class GroupQuestion {
   final String id;
   final String authorUid;

@@ -34,6 +34,11 @@ final groupQuestionsProvider =
   return FirestoreService().watchGroupQuestions(groupId);
 });
 
+final groupChallengesProvider =
+    StreamProvider.family<List<GroupChallenge>, String>((ref, groupId) {
+  return FirestoreService().watchGroupChallenges(groupId);
+});
+
 final groupDocProvider =
     StreamProvider.family<Group?, String>((ref, groupId) {
   return FirebaseFirestore.instance
@@ -363,7 +368,7 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 5, vsync: this);
+    _tabs = TabController(length: 6, vsync: this);
   }
 
   @override
@@ -460,6 +465,7 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
             Tab(text: 'Prayer 🙏'),
             Tab(text: 'Leaderboard'),
             Tab(text: 'Members'),
+            Tab(text: 'Challenges 🏆'),
           ],
         ),
       ),
@@ -474,12 +480,13 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
           _LeaderboardTab(group: group),
           _MembersTab(group: group, currentUid: widget.uid,
               onRemoveMember: isCreator ? (memberUid) => _confirmRemoveMember(context, group, memberUid) : null),
+          _ChallengesTab(group: group, uid: widget.uid, isCreator: isCreator),
         ],
       ),
       floatingActionButton: ListenableBuilder(
         listenable: _tabs,
         builder: (_, __) {
-          if (_tabs.index == 0 || _tabs.index == 3 || _tabs.index == 4) {
+          if (_tabs.index == 0 || _tabs.index == 3 || _tabs.index == 4 || _tabs.index == 5) {
             return const SizedBox.shrink();
           }
           if (_tabs.index == 2) {
@@ -2212,8 +2219,13 @@ class _QuestionDetailScreenState extends State<_QuestionDetailScreen> {
       _ctrl.clear();
       if (mounted) setState(() => _submitting = false);
     } catch (e) {
-      debugPrint('Comment error: \$e');
-      if (mounted) setState(() => _submitting = false);
+      debugPrint('Comment error: $e');
+      if (mounted) {
+        setState(() => _submitting = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not post reply: $e')),
+        );
+      }
     }
   }
 
@@ -2434,7 +2446,13 @@ class _FeedThreadSheetState extends State<_FeedThreadSheet> {
       _ctrl.clear();
       if (mounted) setState(() => _submitting = false);
     } catch (e) {
-      if (mounted) setState(() => _submitting = false);
+      debugPrint('Reply error: $e');
+      if (mounted) {
+        setState(() => _submitting = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not post reply: $e')),
+        );
+      }
     }
   }
 
@@ -2624,5 +2642,755 @@ class _FeedThreadSheetState extends State<_FeedThreadSheet> {
         ],
       ),
     );
+  }
+}
+
+// ── Challenges Tab ────────────────────────────────────────────────────────────
+
+class _ChallengesTab extends ConsumerWidget {
+  final Group group;
+  final String uid;
+  final bool isCreator;
+
+  const _ChallengesTab({
+    required this.group,
+    required this.uid,
+    required this.isCreator,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final challengesAsync = ref.watch(groupChallengesProvider(group.id));
+    final membersAsync = ref.watch(groupMembersProvider(group.id));
+
+    return challengesAsync.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (_, __) => const Center(child: Text('Could not load challenges')),
+      data: (challenges) {
+        final active = challenges.where((c) => c.isActive).toList();
+        final past = challenges.where((c) => c.isExpired).toList();
+        final members = membersAsync.valueOrNull ?? [];
+
+        return ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            // ── Create button (creator, no active challenge) ──────────────
+            if (isCreator && active.isEmpty)
+              _CreateChallengeButton(
+                onTap: () => _showCreateSheet(context, members),
+              ),
+
+            // ── Active challenges ─────────────────────────────────────────
+            if (active.isNotEmpty) ...[
+              ...active.map((c) => _ActiveChallengeCard(
+                challenge: c,
+                members: members,
+                currentUid: uid,
+              )),
+              if (isCreator)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: TextButton.icon(
+                    onPressed: () => _showCreateSheet(context, members),
+                    icon: const Icon(Icons.add, size: 16),
+                    label: const Text('Start another challenge'),
+                    style: TextButton.styleFrom(foregroundColor: AppColors.warmGold),
+                  ),
+                ),
+            ],
+
+            // ── Empty state ───────────────────────────────────────────────
+            if (challenges.isEmpty && !isCreator)
+              Padding(
+                padding: const EdgeInsets.only(top: 48),
+                child: Column(
+                  children: [
+                    const Text('🏆', style: TextStyle(fontSize: 48)),
+                    const SizedBox(height: 16),
+                    Text(
+                      'No challenges yet',
+                      style: AppTypography.displaySmall,
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Your group leader can start a challenge to keep everyone motivated.',
+                      style: AppTypography.bodyMedium.copyWith(color: AppColors.textSecondary),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+
+            // ── Past challenges ───────────────────────────────────────────
+            if (past.isNotEmpty) ...[
+              const SizedBox(height: 24),
+              Text(
+                'PAST CHALLENGES',
+                style: AppTypography.labelSmall.copyWith(color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 8),
+              ...past.map((c) => _PastChallengeRow(challenge: c, members: members)),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  void _showCreateSheet(BuildContext context, List<GroupMember> members) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.cardDark,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => _CreateChallengeSheet(group: group, uid: uid),
+    );
+  }
+}
+
+// ── Create Challenge Button ───────────────────────────────────────────────────
+
+class _CreateChallengeButton extends StatelessWidget {
+  final VoidCallback onTap;
+  const _CreateChallengeButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: AppColors.warmGold.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: AppColors.warmGold.withOpacity(0.35),
+            style: BorderStyle.solid,
+          ),
+        ),
+        child: Column(
+          children: [
+            const Text('🏆', style: TextStyle(fontSize: 36)),
+            const SizedBox(height: 12),
+            Text('Start a Challenge',
+                style: AppTypography.labelLarge.copyWith(color: AppColors.warmGold)),
+            const SizedBox(height: 6),
+            Text(
+              'Rally your group around a shared goal — XP race, streak hold, or collective target.',
+              style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Active Challenge Card ─────────────────────────────────────────────────────
+
+class _ActiveChallengeCard extends StatelessWidget {
+  final GroupChallenge challenge;
+  final List<GroupMember> members;
+  final String currentUid;
+
+  const _ActiveChallengeCard({
+    required this.challenge,
+    required this.members,
+    required this.currentUid,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final daysLeft = challenge.endDate.difference(DateTime.now()).inDays + 1;
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: AppColors.cardDark,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.warmGold.withOpacity(0.3)),
+      ),
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppColors.warmGold.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  'ACTIVE',
+                  style: AppTypography.labelSmall.copyWith(color: AppColors.warmGold),
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '$daysLeft day${daysLeft == 1 ? '' : 's'} left',
+                style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(challenge.title, style: AppTypography.labelLarge),
+          const SizedBox(height: 4),
+          Text(
+            _challengeDescription(challenge),
+            style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary),
+          ),
+          const SizedBox(height: 16),
+          _buildProgress(context),
+        ],
+      ),
+    );
+  }
+
+  String _challengeDescription(GroupChallenge c) {
+    switch (c.type) {
+      case 'weekly_xp_race':
+        return 'Earn the most XP by ${_fmtDate(c.endDate)}';
+      case 'streak_hold':
+        return 'Everyone keeps a ${c.goal}-day streak until ${_fmtDate(c.endDate)}';
+      case 'group_xp_goal':
+        return 'Collectively reach ${c.goal} XP together by ${_fmtDate(c.endDate)}';
+      default:
+        return '';
+    }
+  }
+
+  String _fmtDate(DateTime d) =>
+      '${_month(d.month)} ${d.day}';
+  String _month(int m) => const [
+        '', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+      ][m];
+
+  Widget _buildProgress(BuildContext context) {
+    if (members.isEmpty) {
+      return const SizedBox(
+        height: 40,
+        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+      );
+    }
+
+    switch (challenge.type) {
+      case 'weekly_xp_race':
+        return _XpRaceProgress(members: members, currentUid: currentUid);
+      case 'streak_hold':
+        return _StreakHoldProgress(members: members, goal: challenge.goal, currentUid: currentUid);
+      case 'group_xp_goal':
+        return _GroupGoalProgress(members: members, goal: challenge.goal);
+      default:
+        return const SizedBox.shrink();
+    }
+  }
+}
+
+// ── XP Race Progress ──────────────────────────────────────────────────────────
+
+class _XpRaceProgress extends StatelessWidget {
+  final List<GroupMember> members;
+  final String currentUid;
+  const _XpRaceProgress({required this.members, required this.currentUid});
+
+  @override
+  Widget build(BuildContext context) {
+    final sorted = [...members]..sort((a, b) => b.weeklyXp.compareTo(a.weeklyXp));
+    final maxXp = sorted.isNotEmpty ? sorted.first.weeklyXp.toDouble() : 1.0;
+
+    return Column(
+      children: sorted.take(5).map((m) {
+        final isMe = m.uid == currentUid;
+        final fraction = maxXp > 0 ? m.weeklyXp / maxXp : 0.0;
+        final rank = sorted.indexOf(m) + 1;
+        final medal = rank == 1 ? '🥇' : rank == 2 ? '🥈' : rank == 3 ? '🥉' : '$rank.';
+
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Row(
+            children: [
+              SizedBox(width: 28, child: Text(medal, style: const TextStyle(fontSize: 14))),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          isMe ? '${m.name} (you)' : m.name,
+                          style: AppTypography.labelSmall.copyWith(
+                            color: isMe ? AppColors.warmGold : AppColors.textPrimary,
+                          ),
+                        ),
+                        Text('${m.weeklyXp} XP',
+                            style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary)),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: LinearProgressIndicator(
+                        value: fraction.clamp(0.0, 1.0),
+                        minHeight: 6,
+                        backgroundColor: AppColors.surface,
+                        valueColor: AlwaysStoppedAnimation(
+                          isMe ? AppColors.warmGold : AppColors.textSecondary.withOpacity(0.6),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+}
+
+// ── Streak Hold Progress ──────────────────────────────────────────────────────
+
+class _StreakHoldProgress extends StatelessWidget {
+  final List<GroupMember> members;
+  final int goal;
+  final String currentUid;
+  const _StreakHoldProgress({
+    required this.members,
+    required this.goal,
+    required this.currentUid,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final holding = members.where((m) => m.streak >= goal).length;
+    final total = members.length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              '$holding / $total holding',
+              style: AppTypography.labelSmall.copyWith(color: AppColors.warmGold),
+            ),
+            const Spacer(),
+            Text('Goal: $goal-day streak',
+                style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary)),
+          ],
+        ),
+        const SizedBox(height: 10),
+        ...members.map((m) {
+          final passing = m.streak >= goal;
+          final isMe = m.uid == currentUid;
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Row(
+              children: [
+                Text(passing ? '✅' : '❌', style: const TextStyle(fontSize: 14)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    isMe ? '${m.name} (you)' : m.name,
+                    style: AppTypography.bodySmall.copyWith(
+                      color: isMe ? AppColors.warmGold : AppColors.textPrimary,
+                    ),
+                  ),
+                ),
+                Text(
+                  '${m.streak} day${m.streak == 1 ? '' : 's'}',
+                  style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary),
+                ),
+              ],
+            ),
+          );
+        }),
+      ],
+    );
+  }
+}
+
+// ── Group XP Goal Progress ────────────────────────────────────────────────────
+
+class _GroupGoalProgress extends StatelessWidget {
+  final List<GroupMember> members;
+  final int goal;
+  const _GroupGoalProgress({required this.members, required this.goal});
+
+  @override
+  Widget build(BuildContext context) {
+    final total = members.fold(0, (sum, m) => sum + m.weeklyXp);
+    final fraction = goal > 0 ? (total / goal).clamp(0.0, 1.0) : 0.0;
+    final pct = (fraction * 100).round();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('$total / $goal XP',
+                style: AppTypography.labelSmall.copyWith(color: AppColors.warmGold)),
+            Text('$pct%',
+                style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary)),
+          ],
+        ),
+        const SizedBox(height: 8),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: LinearProgressIndicator(
+            value: fraction,
+            minHeight: 12,
+            backgroundColor: AppColors.surface,
+            valueColor: const AlwaysStoppedAnimation(AppColors.warmGold),
+          ),
+        ),
+        if (pct >= 100) ...[
+          const SizedBox(height: 10),
+          Center(
+            child: Text('🎉 Goal reached!',
+                style: AppTypography.labelSmall.copyWith(color: AppColors.warmGold)),
+          ),
+        ],
+        const SizedBox(height: 12),
+        ...([...members.where((m) => m.weeklyXp > 0)]
+              ..sort((a, b) => b.weeklyXp.compareTo(a.weeklyXp)))
+            .map((m) => Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(m.name, style: AppTypography.bodySmall),
+                      ),
+                      Text('${m.weeklyXp} XP',
+                          style: AppTypography.bodySmall
+                              .copyWith(color: AppColors.textSecondary)),
+                    ],
+                  ),
+                ))
+            .toList(),
+      ],
+    );
+  }
+}
+
+// ── Past Challenge Row ────────────────────────────────────────────────────────
+
+class _PastChallengeRow extends StatelessWidget {
+  final GroupChallenge challenge;
+  final List<GroupMember> members;
+  const _PastChallengeRow({required this.challenge, required this.members});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.cardDark,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          const Text('🏁', style: TextStyle(fontSize: 16)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(challenge.title, style: AppTypography.labelSmall),
+                Text(
+                  _typeLabel(challenge.type),
+                  style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary),
+                ),
+              ],
+            ),
+          ),
+          Text(
+            _fmtDate(challenge.endDate),
+            style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _typeLabel(String type) {
+    switch (type) {
+      case 'weekly_xp_race': return 'XP Race';
+      case 'streak_hold': return 'Streak Hold';
+      case 'group_xp_goal': return 'Group Goal';
+      default: return type;
+    }
+  }
+
+  String _fmtDate(DateTime d) {
+    const months = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return '${months[d.month]} ${d.day}';
+  }
+}
+
+// ── Create Challenge Sheet ────────────────────────────────────────────────────
+
+class _CreateChallengeSheet extends StatefulWidget {
+  final Group group;
+  final String uid;
+  const _CreateChallengeSheet({required this.group, required this.uid});
+
+  @override
+  State<_CreateChallengeSheet> createState() => _CreateChallengeSheetState();
+}
+
+class _CreateChallengeSheetState extends State<_CreateChallengeSheet> {
+  String _type = 'weekly_xp_race';
+  int _goal = 500;
+  int _durationDays = 7;
+  bool _saving = false;
+  late final TextEditingController _goalCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _goalCtrl = TextEditingController(text: '$_goal');
+  }
+
+  @override
+  void dispose() {
+    _goalCtrl.dispose();
+    super.dispose();
+  }
+
+  static const _types = [
+    ('weekly_xp_race', '⚡ XP Race', 'Compete for the most XP by the deadline'),
+    ('streak_hold', '🔥 Streak Hold', 'Everyone maintains a daily streak together'),
+    ('group_xp_goal', '🎯 Group Goal', 'Collectively hit a combined XP target'),
+  ];
+
+  static const _durations = [3, 7, 14];
+
+  String get _autoTitle {
+    switch (_type) {
+      case 'weekly_xp_race': return 'XP Race — ${_durationDays}d';
+      case 'streak_hold': return '${_goal}-Day Streak Challenge';
+      case 'group_xp_goal': return 'Group Goal: ${_goal} XP';
+      default: return 'Group Challenge';
+    }
+  }
+
+  String get _goalLabel {
+    switch (_type) {
+      case 'weekly_xp_race': return 'Minimum XP to "win" (0 = no floor)';
+      case 'streak_hold': return 'Streak days required';
+      case 'group_xp_goal': return 'Combined XP target';
+      default: return 'Goal';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        20, 20, 20, MediaQuery.of(context).viewInsets.bottom + 24,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Handle
+          Center(
+            child: Container(
+              width: 36, height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.textSecondary.withOpacity(0.4),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text('Start a Challenge', style: AppTypography.displaySmall),
+          const SizedBox(height: 20),
+
+          // Type selector
+          Text('Type', style: AppTypography.labelSmall.copyWith(color: AppColors.textSecondary)),
+          const SizedBox(height: 8),
+          ..._types.map(((String, String, String) t) {
+            final (type, label, desc) = t;
+            final selected = _type == type;
+            return GestureDetector(
+              onTap: () {
+                final newGoal = type == 'streak_hold' ? 7 : type == 'group_xp_goal' ? 1000 : 500;
+                setState(() { _type = type; _goal = newGoal; });
+                _goalCtrl.text = '$newGoal';
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: selected ? AppColors.warmGold.withOpacity(0.12) : AppColors.surface,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: selected ? AppColors.warmGold : Colors.transparent,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Text(label.split(' ').first, style: const TextStyle(fontSize: 20)),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            label.split(' ').skip(1).join(' '),
+                            style: AppTypography.labelSmall.copyWith(
+                              color: selected ? AppColors.warmGold : AppColors.textPrimary,
+                            ),
+                          ),
+                          Text(desc,
+                              style: AppTypography.bodySmall
+                                  .copyWith(color: AppColors.textSecondary)),
+                        ],
+                      ),
+                    ),
+                    if (selected)
+                      const Icon(Icons.check_circle, color: AppColors.warmGold, size: 18),
+                  ],
+                ),
+              ),
+            );
+          }),
+
+          const SizedBox(height: 12),
+
+          // Goal input
+          Text(_goalLabel,
+              style: AppTypography.labelSmall.copyWith(color: AppColors.textSecondary)),
+          const SizedBox(height: 8),
+          Container(
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: TextField(
+              keyboardType: TextInputType.number,
+              style: AppTypography.bodyMedium,
+              controller: _goalCtrl,
+              onChanged: (v) => setState(() => _goal = int.tryParse(v) ?? _goal),
+              decoration: const InputDecoration(
+                border: InputBorder.none,
+                contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
+          // Duration selector
+          Text('Duration',
+              style: AppTypography.labelSmall.copyWith(color: AppColors.textSecondary)),
+          const SizedBox(height: 8),
+          Row(
+            children: _durations.map((d) {
+              final selected = _durationDays == d;
+              return Expanded(
+                child: GestureDetector(
+                  onTap: () => setState(() => _durationDays = d),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    margin: const EdgeInsets.only(right: d == 14 ? 0 : 8),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    decoration: BoxDecoration(
+                      color: selected ? AppColors.warmGold : AppColors.surface,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '$d days',
+                      textAlign: TextAlign.center,
+                      style: AppTypography.labelSmall.copyWith(
+                        color: selected ? AppColors.deepSlate : AppColors.textSecondary,
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+
+          const SizedBox(height: 20),
+
+          // Create button
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _saving ? null : _create,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.warmGold,
+                foregroundColor: AppColors.deepSlate,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              child: _saving
+                  ? const SizedBox(
+                      width: 20, height: 20,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: AppColors.deepSlate))
+                  : Text('Start Challenge', style: AppTypography.labelLarge),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _create() async {
+    setState(() => _saving = true);
+    final now = DateTime.now();
+
+    // Get creator name from Firestore
+    String creatorName = 'Creator';
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('users').doc(widget.uid).get();
+      creatorName = (snap.data()?['profile']?['name'] as String?) ?? 'Creator';
+    } catch (_) {}
+
+    final challenge = GroupChallenge(
+      id: '',
+      title: _autoTitle,
+      type: _type,
+      goal: _goal,
+      startDate: now,
+      endDate: now.add(Duration(days: _durationDays)),
+      createdBy: widget.uid,
+      createdByName: creatorName,
+      createdAt: now,
+    );
+
+    try {
+      await FirestoreService().createGroupChallenge(widget.group.id, challenge);
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      setState(() => _saving = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not create challenge. Try again.')),
+        );
+      }
+    }
   }
 }

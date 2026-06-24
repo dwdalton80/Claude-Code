@@ -1,13 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'firebase_options.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:cloud_functions/cloud_functions.dart';
 import 'app.dart';
 import 'screens/splash_screen.dart';
 
@@ -44,6 +42,27 @@ void main() async {
     sound: true,
     provisional: false,
   );
+
+  // Show notifications as banners when the app is in the foreground (iOS)
+  await FirebaseMessaging.instance.setForegroundNotificationPresentationOptions(
+    alert: true,
+    badge: true,
+    sound: true,
+  );
+
+  // ── Notification tap routing ───────────────────────────────────────────────
+
+  // Cold start: app was terminated when notification was tapped
+  final initialMessage = await FirebaseMessaging.instance.getInitialMessage();
+  if (initialMessage != null) {
+    // Store route — will be consumed once the router is ready
+    pendingNotificationRoute.value = notificationRouteFor(initialMessage.data);
+  }
+
+  // Background: app was backgrounded, user tapped notification
+  FirebaseMessaging.onMessageOpenedApp.listen((message) {
+    pendingNotificationRoute.value = notificationRouteFor(message.data);
+  });
 
   // Register FCM token with backend on sign-in
   FirebaseAuth.instance.authStateChanges().listen((user) async {

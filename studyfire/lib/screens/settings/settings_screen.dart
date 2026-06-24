@@ -32,6 +32,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _notificationsEnabled = true;
   bool _streakReminderEnabled = true;
   bool _morningFocusEnabled = true;
+  bool _groupNotificationsEnabled = true;
   bool _reduceMotion = false;
   bool _saving = false;
   int _versionTapCount = 0;
@@ -61,9 +62,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     if (!doc.exists || !mounted) return;
     final prefs = (doc.data()?['preferences'] as Map<String, dynamic>?) ?? {};
     setState(() {
-      _notificationsEnabled = prefs['notificationsEnabled'] as bool? ?? true;
-      _streakReminderEnabled = prefs['streakReminderEnabled'] as bool? ?? true;
-      _morningFocusEnabled   = prefs['morningFocusEnabled']   as bool? ?? true;
+      _notificationsEnabled       = prefs['notificationsEnabled']       as bool? ?? true;
+      _streakReminderEnabled      = prefs['streakReminderEnabled']      as bool? ?? true;
+      _morningFocusEnabled        = prefs['morningFocusEnabled']        as bool? ?? true;
+      _groupNotificationsEnabled  = prefs['groupNotificationsEnabled']  as bool? ?? true;
     });
   }
 
@@ -181,6 +183,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ? (v) {
                     setState(() => _morningFocusEnabled = v);
                     _saveNotificationPref('morningFocusEnabled', v);
+                  }
+                : null,
+          ),
+          _SwitchTile(
+            label: 'Group activity',
+            subtitle: 'Daily digest of what\'s happening in your groups',
+            value: _groupNotificationsEnabled && _notificationsEnabled,
+            onChanged: _notificationsEnabled
+                ? (v) {
+                    setState(() => _groupNotificationsEnabled = v);
+                    _saveNotificationPref('groupNotificationsEnabled', v);
                   }
                 : null,
           ),

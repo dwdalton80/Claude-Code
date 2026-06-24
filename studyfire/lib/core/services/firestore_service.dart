@@ -467,6 +467,28 @@ class FirestoreService {
     return snap.docs.map(GroupMember.fromFirestore).toList();
   }
 
+  // ── Group Challenges ─────────────────────────────────────────────────────
+
+  Stream<List<GroupChallenge>> watchGroupChallenges(String groupId) {
+    return _db
+        .collection('groups')
+        .doc(groupId)
+        .collection('challenges')
+        .orderBy('createdAt', descending: true)
+        .limit(20)
+        .snapshots()
+        .map((s) => s.docs.map(GroupChallenge.fromFirestore).toList());
+  }
+
+  Future<void> createGroupChallenge(
+      String groupId, GroupChallenge challenge) async {
+    await _db
+        .collection('groups')
+        .doc(groupId)
+        .collection('challenges')
+        .add(challenge.toFirestore());
+  }
+
   // ── Prayer Requests ──────────────────────────────────────────────────────
 
   Stream<List<PrayerRequest>> watchPrayerRequests(String groupId) {

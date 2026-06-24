@@ -35,6 +35,7 @@ class _QuestScreenState extends ConsumerState<QuestScreen> {
   bool _completedToday = false;
   String _countdown = '';
   Timer? _countdownTimer;
+  Map<String, dynamic>? _devotional;
 
   String get _today => DateTime.now().toIso8601String().split('T')[0];
 
@@ -121,6 +122,7 @@ class _QuestScreenState extends ConsumerState<QuestScreen> {
         setState(() {
           _passageId = pid;
           _passage = reference;
+          _devotional = data['devotional'] as Map<String, dynamic>?;
         });
         return;
       }
@@ -183,56 +185,71 @@ class _QuestScreenState extends ConsumerState<QuestScreen> {
     return Scaffold(
       backgroundColor: AppColors.deepSlate,
       body: SafeArea(
-        child: Column(
+        child: Stack(
+          children: [
+            Column(
               children: [
-                if (_showSparkHint)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                    child: GestureDetector(
-                      onTap: () async {
-                        final prefs = await SharedPreferences.getInstance();
-                        await prefs.setBool('hint_spark_session', true);
-                        if (mounted) setState(() => _showSparkHint = false);
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: AppColors.cardDark,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: AppColors.warmGold.withOpacity(0.3)),
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      children: [
+                        _QuestCard(
+                          passage: _passage,
+                          studyLevel: _studyLevel,
+                          xpReward: _xpForLength(_sessionLength),
+                          sessionLength: _sessionLength,
+                          onLengthChanged: (l) => setState(() => _sessionLength = l),
+                          onStart: _startSession,
+                          onRandomSpark: _randomSpark,
+                          completedToday: _completedToday,
+                          countdown: _countdown,
                         ),
-                        child: Row(
-                          children: [
-                            const Text('⚡ ', style: TextStyle(fontSize: 16)),
-                            const Expanded(
-                              child: Text(
-                                'A Spark is 90 seconds of focused study — a verse, an AI question, and your reflection. Tap to dismiss.',
-                                style: TextStyle(fontSize: 12, color: AppColors.warmGold),
-                              ),
-                            ),
-                            const Icon(Icons.close, size: 14, color: AppColors.warmGold),
-                          ],
-                        ),
-                      ),
+                        if (_devotional != null)
+                          _DevotionalCard(devotional: _devotional!),
+                        const SizedBox(height: 8),
+                      ],
                     ),
                   ),
-                Expanded(flex: 8, child: _QuestCard(
-                  passage: _passage,
-                  studyLevel: _studyLevel,
-                  xpReward: _xpForLength(_sessionLength),
-                  sessionLength: _sessionLength,
-                  onLengthChanged: (l) => setState(() => _sessionLength = l),
-                  onStart: _startSession,
-                  onRandomSpark: _randomSpark,
-                  completedToday: _completedToday,
-                  countdown: _countdown,
-                )),
-                Expanded(flex: 2, child: _StatsBar(
+                ),
+                _StatsBar(
                   streak: _streak,
                   dailyXp: _dailyXp.clamp(0, _dailyXpGoal),
                   dailyXpGoal: _dailyXpGoal,
-                )),
+                ),
               ],
+            ),
+            if (_showSparkHint)
+              Positioned(
+                top: 0, left: 16, right: 16,
+                child: GestureDetector(
+                  onTap: () async {
+                    final prefs = await SharedPreferences.getInstance();
+                    await prefs.setBool('hint_spark_session', true);
+                    if (mounted) setState(() => _showSparkHint = false);
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppColors.cardDark,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.warmGold.withOpacity(0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Text('⚡ ', style: TextStyle(fontSize: 16)),
+                        const Expanded(
+                          child: Text(
+                            'A Spark is 90 seconds of focused study — a verse, an AI question, and your reflection. Tap to dismiss.',
+                            style: TextStyle(fontSize: 12, color: AppColors.warmGold),
+                          ),
+                        ),
+                        const Icon(Icons.close, size: 14, color: AppColors.warmGold),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );
@@ -381,7 +398,8 @@ class _QuestCard extends StatelessWidget {
                 ),
               )
             else
-              Flexible(
+              SizedBox(
+                height: 90,
                 child: GestureDetector(
                   onTap: onStart,
                   child: Image.asset(
@@ -584,6 +602,162 @@ class _StatsBar extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+// ── Daily Devotional Card ─────────────────────────────────────────────────────
+
+class _DevotionalCard extends StatefulWidget {
+  final Map<String, dynamic> devotional;
+
+  const _DevotionalCard({required this.devotional});
+
+  @override
+  State<_DevotionalCard> createState() => _DevotionalCardState();
+}
+
+class _DevotionalCardState extends State<_DevotionalCard> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final reflection = widget.devotional['reflection'] as String? ?? '';
+    final prayerPrompt = widget.devotional['prayerPrompt'] as String? ?? '';
+    final applicationQuestion = widget.devotional['applicationQuestion'] as String? ?? '';
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+      child: GestureDetector(
+        onTap: () => setState(() => _expanded = !_expanded),
+        child: AnimatedSize(
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeInOut,
+          alignment: Alignment.topCenter,
+          child: Container(
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: AppColors.cardDark,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: AppColors.warmGold.withOpacity(0.25)),
+          ),
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header row
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AppColors.warmGold.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      "TODAY'S DEVOTIONAL",
+                      style: AppTypography.labelSmall.copyWith(color: AppColors.warmGold),
+                    ),
+                  ),
+                  const Spacer(),
+                  Icon(
+                    _expanded ? Icons.expand_less : Icons.expand_more,
+                    color: AppColors.textSecondary,
+                    size: 20,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              // Reflection (always visible — first sentence as preview when collapsed)
+              Text(
+                _expanded
+                    ? reflection
+                    : _firstSentence(reflection),
+                style: AppTypography.bodyMedium.copyWith(
+                  color: AppColors.textPrimary,
+                  height: 1.55,
+                ),
+              ),
+              if (!_expanded) ...[
+                const SizedBox(height: 6),
+                Text(
+                  'Tap to read more…',
+                  style: AppTypography.bodySmall.copyWith(
+                    color: AppColors.warmGold.withOpacity(0.7),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+              if (_expanded) ...[
+                const SizedBox(height: 18),
+                // Prayer prompt
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.warmGold.withOpacity(0.15)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '🙏  Prayer',
+                        style: AppTypography.labelSmall.copyWith(color: AppColors.warmGold),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        prayerPrompt,
+                        style: AppTypography.bodyMedium.copyWith(
+                          color: AppColors.textPrimary,
+                          fontStyle: FontStyle.italic,
+                          height: 1.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                // Application question
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.warmGold.withOpacity(0.15)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '💬  Reflect Today',
+                        style: AppTypography.labelSmall.copyWith(color: AppColors.warmGold),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        applicationQuestion,
+                        style: AppTypography.bodyMedium.copyWith(
+                          color: AppColors.textPrimary,
+                          height: 1.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),   // Column
+          ),   // Container
+        ),     // AnimatedSize
+      ),       // GestureDetector
+    );
+  }
+
+  /// Returns the first sentence of a paragraph for the collapsed preview.
+  String _firstSentence(String text) {
+    final match = RegExp(r'^[^.!?]+[.!?]').firstMatch(text);
+    return match != null ? match.group(0)! : text;
   }
 }
 

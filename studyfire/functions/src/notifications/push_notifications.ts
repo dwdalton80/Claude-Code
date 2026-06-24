@@ -160,7 +160,8 @@ export async function sendFocusCompanion(): Promise<void> {
 
 /**
  * Sends daily group digest — single notification summarizing group activity.
- * Replaces per-reaction/comment notifications.
+ * Respects per-user groupNotificationsEnabled preference (Firestore users/{uid}.preferences).
+ * Skips groups with no activity in the past 24 hours.
  */
 export async function sendGroupDigests(): Promise<void> {
   const yesterday = new Date();
@@ -170,7 +171,7 @@ export async function sendGroupDigests(): Promise<void> {
 
   for (const groupDoc of groupsSnap.docs) {
     const groupId = groupDoc.id;
-    const groupName = groupDoc.data().name as string;
+    const groupName = (groupDoc.data().displayName ?? groupDoc.data().name ?? "Your Group") as string;
 
     // Count activity since yesterday
     const feedSnap = await db()
@@ -182,22 +183,32 @@ export async function sendGroupDigests(): Promise<void> {
 
     if (feedSnap.empty) continue;
 
-    // Get members who want group notifications
+    // Get all members — filter muted ones in code to avoid missing docs where field is absent
     const membersSnap = await db()
       .collection("groups")
       .doc(groupId)
       .collection("members")
-      .where("mutedNotifications", "==", false)
       .get();
 
     const activityCount = feedSnap.size;
 
     for (const memberDoc of membersSnap.docs) {
+      const memberData = memberDoc.data();
+      // Skip if member explicitly muted this group
+      if (memberData.mutedNotifications === true) continue;
+
       const uid = memberDoc.id;
+
+      // Respect user-level group notification preference
+      const userSnap = await db().collection("users").doc(uid).get();
+      const prefs = (userSnap.data()?.preferences ?? {}) as Record<string, unknown>;
+      if (prefs.notificationsEnabled === false) continue;
+      if (prefs.groupNotificationsEnabled === false) continue;
+
       await sendPushNotification({
         uid,
-        title: groupName,
-        body: `${activityCount} new activit${activityCount === 1 ? "y" : "ies"} in your group`,
+        title: `📖 ${groupName}`,
+        body: `${activityCount} new activit${activityCount === 1 ? "y" : "ies"} — see what your group is up to`,
         data: { type: "group_digest", groupId },
       });
     }

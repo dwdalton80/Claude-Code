@@ -37,6 +37,27 @@ final currentProfileProvider = StreamProvider.autoDispose<UserProfile?>((ref) {
   );
 });
 
+// ── Notification deep-link support ────────────────────────────────────────────
+
+/// Set by main.dart when a notification tap should navigate somewhere.
+/// GoRouter listens to this and redirects on the next frame.
+final pendingNotificationRoute = ValueNotifier<String?>(null);
+
+/// Convert FCM message data to a GoRouter path.
+String notificationRouteFor(Map<String, dynamic> data) {
+  final type = data['type'] as String? ?? '';
+  switch (type) {
+    case 'group_digest':
+    case 'prayer_request':
+    case 'prayer_answered':
+      return '/groups';
+    case 'streak_reminder':
+    case 'focus_companion':
+    default:
+      return '/quest';
+  }
+}
+
 // ── Router ────────────────────────────────────────────────────────────────────
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -48,7 +69,7 @@ final routerProvider = Provider<GoRouter>((ref) {
 
   return GoRouter(
     initialLocation: '/quest',
-    refreshListenable: authNotifier,
+    refreshListenable: Listenable.merge([authNotifier, pendingNotificationRoute]),
     redirect: (context, state) {
       final isAuthenticated = authState.valueOrNull != null;
       final isLoading = authState.isLoading;
@@ -61,6 +82,14 @@ final routerProvider = Provider<GoRouter>((ref) {
       if (isAuthenticated && state.matchedLocation == '/onboarding') {
         return '/quest';
       }
+
+      // Notification deep link — consume and navigate
+      final pending = pendingNotificationRoute.value;
+      if (pending != null && isAuthenticated) {
+        pendingNotificationRoute.value = null;
+        return pending;
+      }
+
       return null;
     },
     routes: [
