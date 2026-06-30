@@ -2,6 +2,7 @@ import * as functions from "firebase-functions/v1";
 import * as admin from "firebase-admin";
 import { generateSparkQuestion } from "./claude/spark_questions";
 import { generateAiStudy, StudyContext } from "./claude/ai_study";
+import { generateDigDeeperStudy, askDigDeeperQuestion, DigDeeperStudyRequest } from "./claude/dig_deeper_study";
 import { generateQuizBatch, generateWordOfDay } from "./claude/quiz_generation";
 import { generateSermonDebrief, suggestSermonTitle, DebriefContext } from "./claude/sermon_debrief";
 import { getClaudeClient, MODELS, StudyLevel, studyLevelInstructions } from "./claude/client";
@@ -13,6 +14,7 @@ import {
   sendGroupDigests,
   sendPushNotification,
 } from "./notifications/push_notifications";
+import { sendDigDeeperMorningReminder } from "./notifications/digdeeper_notifications";
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -62,8 +64,73 @@ export const generateDailySpark = functions.pubsub.schedule("0 2 * * *").onRun(a
  * Pre-generates daily quiz questions and Word of the Day via Batch API.
  * 50% cost savings vs individual API calls.
  */
+// ── Curated rotating verse list ───────────────────────────────────────────────
+const _FOCUS_VERSES: { text: string; reference: string }[] = [
+  { text: "For God so loved the world that he gave his one and only Son, that whoever believes in him shall not perish but have eternal life.", reference: "John 3:16" },
+  { text: "I can do all this through him who gives me strength.", reference: "Philippians 4:13" },
+  { text: "Trust in the Lord with all your heart and lean not on your own understanding; in all your ways submit to him, and he will make your paths straight.", reference: "Proverbs 3:5-6" },
+  { text: "For I know the plans I have for you, declares the Lord, plans to prosper you and not to harm you, plans to give you hope and a future.", reference: "Jeremiah 29:11" },
+  { text: "The Lord is my shepherd, I lack nothing.", reference: "Psalm 23:1" },
+  { text: "Be strong and courageous. Do not be afraid; do not be discouraged, for the Lord your God will be with you wherever you go.", reference: "Joshua 1:9" },
+  { text: "And we know that in all things God works for the good of those who love him, who have been called according to his purpose.", reference: "Romans 8:28" },
+  { text: "Do not be anxious about anything, but in every situation, by prayer and petition, with thanksgiving, present your requests to God.", reference: "Philippians 4:6" },
+  { text: "But those who hope in the Lord will renew their strength. They will soar on wings like eagles; they will run and not grow weary, they will walk and not be faint.", reference: "Isaiah 40:31" },
+  { text: "For the Spirit God gave us does not make us timid, but gives us power, love and self-discipline.", reference: "2 Timothy 1:7" },
+  { text: "Come to me, all you who are weary and burdened, and I will give you rest.", reference: "Matthew 11:28" },
+  { text: "The Lord himself goes before you and will be with you; he will never leave you nor forsake you.", reference: "Deuteronomy 31:8" },
+  { text: "Your word is a lamp for my feet, a light on my path.", reference: "Psalm 119:105" },
+  { text: "Be still, and know that I am God.", reference: "Psalm 46:10" },
+  { text: "Love the Lord your God with all your heart and with all your soul and with all your mind.", reference: "Matthew 22:37" },
+  { text: "The Lord is close to the brokenhearted and saves those who are crushed in spirit.", reference: "Psalm 34:18" },
+  { text: "Cast all your anxiety on him because he cares for you.", reference: "1 Peter 5:7" },
+  { text: "I am the way and the truth and the life. No one comes to the Father except through me.", reference: "John 14:6" },
+  { text: "Even though I walk through the darkest valley, I will fear no evil, for you are with me.", reference: "Psalm 23:4" },
+  { text: "For it is by grace you have been saved, through faith — and this is not from yourselves, it is the gift of God.", reference: "Ephesians 2:8" },
+  { text: "The Lord bless you and keep you; the Lord make his face shine on you and be gracious to you.", reference: "Numbers 6:24-25" },
+  { text: "Create in me a pure heart, O God, and renew a steadfast spirit within me.", reference: "Psalm 51:10" },
+  { text: "But seek first his kingdom and his righteousness, and all these things will be given to you as well.", reference: "Matthew 6:33" },
+  { text: "If any of you lacks wisdom, you should ask God, who gives generously to all without finding fault, and it will be given to you.", reference: "James 1:5" },
+  { text: "God is our refuge and strength, an ever-present help in trouble.", reference: "Psalm 46:1" },
+  { text: "I have been crucified with Christ and I no longer live, but Christ lives in me.", reference: "Galatians 2:20" },
+  { text: "Greater love has no one than this: to lay down one's life for one's friends.", reference: "John 15:13" },
+  { text: "The steadfast love of the Lord never ceases; his mercies never come to an end; they are new every morning.", reference: "Lamentations 3:22-23" },
+  { text: "Delight yourself in the Lord, and he will give you the desires of your heart.", reference: "Psalm 37:4" },
+  { text: "No, in all these things we are more than conquerors through him who loved us.", reference: "Romans 8:37" },
+  { text: "Let your light shine before others, that they may see your good deeds and glorify your Father in heaven.", reference: "Matthew 5:16" },
+  { text: "For where two or three gather in my name, there am I with them.", reference: "Matthew 18:20" },
+  { text: "I praise you because I am fearfully and wonderfully made; your works are wonderful, I know that full well.", reference: "Psalm 139:14" },
+  { text: "Above all else, guard your heart, for everything you do flows from it.", reference: "Proverbs 4:23" },
+  { text: "Do not conform to the pattern of this world, but be transformed by the renewing of your mind.", reference: "Romans 12:2" },
+  { text: "The heart of man plans his way, but the Lord establishes his steps.", reference: "Proverbs 16:9" },
+  { text: "He heals the brokenhearted and binds up their wounds.", reference: "Psalm 147:3" },
+  { text: "Give thanks to the Lord, for he is good; his love endures forever.", reference: "Psalm 107:1" },
+  { text: "Therefore, if anyone is in Christ, the new creation has come: The old has gone, the new is here!", reference: "2 Corinthians 5:17" },
+  { text: "For I am convinced that neither death nor life, neither angels nor demons, neither the present nor the future, nor any powers, neither height nor depth, nor anything else in all creation, will be able to separate us from the love of God.", reference: "Romans 8:38-39" },
+  { text: "The Lord is my light and my salvation — whom shall I fear?", reference: "Psalm 27:1" },
+  { text: "Ask and it will be given to you; seek and you will find; knock and the door will be opened to you.", reference: "Matthew 7:7" },
+  { text: "Now faith is confidence in what we hope for and assurance about what we do not see.", reference: "Hebrews 11:1" },
+  { text: "Let us not become weary in doing good, for at the proper time we will reap a harvest if we do not give up.", reference: "Galatians 6:9" },
+  { text: "Rejoice always, pray continually, give thanks in all circumstances; for this is God's will for you in Christ Jesus.", reference: "1 Thessalonians 5:16-18" },
+  { text: "The name of the Lord is a fortified tower; the righteous run to it and are safe.", reference: "Proverbs 18:10" },
+  { text: "For God did not send his Son into the world to condemn the world, but to save the world through him.", reference: "John 3:17" },
+  { text: "My grace is sufficient for you, for my power is made perfect in weakness.", reference: "2 Corinthians 12:9" },
+  { text: "He gives strength to the weary and increases the power of the weak.", reference: "Isaiah 40:29" },
+  { text: "Whoever walks in integrity walks securely, but whoever takes crooked paths will be found out.", reference: "Proverbs 10:9" },
+  { text: "The grass withers and the flowers fall, but the word of our God endures forever.", reference: "Isaiah 40:8" },
+  { text: "Jesus Christ is the same yesterday and today and forever.", reference: "Hebrews 13:8" },
+  { text: "Set your minds on things above, not on earthly things.", reference: "Colossians 3:2" },
+  { text: "And the peace of God, which transcends all understanding, will guard your hearts and your minds in Christ Jesus.", reference: "Philippians 4:7" },
+  { text: "You are the light of the world. A town built on a hill cannot be hidden.", reference: "Matthew 5:14" },
+  { text: "For the word of God is alive and active. Sharper than any double-edged sword.", reference: "Hebrews 4:12" },
+  { text: "With man this is impossible, but with God all things are possible.", reference: "Matthew 19:26" },
+  { text: "I will never leave you nor forsake you.", reference: "Hebrews 13:5" },
+  { text: "Taste and see that the Lord is good; blessed is the one who takes refuge in him.", reference: "Psalm 34:8" },
+  { text: "The Lord your God is with you, the Mighty Warrior who saves. He will take great delight in you.", reference: "Zephaniah 3:17" },
+  { text: "This is the day the Lord has made; let us rejoice and be glad in it.", reference: "Psalm 118:24" },
+];
+
 export const generateDailyCache = functions.pubsub.schedule("30 2 * * *").onRun(async () => {
-    functions.logger.info("Generating daily cache (quiz + word of day)");
+    functions.logger.info("Generating daily cache (quiz + word of day + focus verse)");
 
     const today = dateKey(new Date());
     const topicTags = [
@@ -109,6 +176,21 @@ export const generateDailyCache = functions.pubsub.schedule("30 2 * * *").onRun(
       }
     } catch (err) {
       functions.logger.error("Word of day generation failed", err);
+    }
+
+    // ── Focus Verse (Verse of the Day) ────────────────────────────────────────
+    try {
+      const now = new Date();
+      const startOfYear = new Date(now.getFullYear(), 0, 0);
+      const dayOfYear = Math.floor((now.getTime() - startOfYear.getTime()) / 86_400_000);
+      const verse = _FOCUS_VERSES[dayOfYear % _FOCUS_VERSES.length];
+      await db.collection("dailycache").doc(today).set(
+        { focusVerse: verse },
+        { merge: true }
+      );
+      functions.logger.info("Focus verse set", { reference: verse.reference });
+    } catch (err) {
+      functions.logger.error("Focus verse generation failed", err);
     }
   });
 
@@ -204,6 +286,11 @@ export const sendMorningFocusCompanion = functions.pubsub.schedule("30 9 * * *")
 export const sendDailyGroupDigests = functions.pubsub.schedule("0 19 * * *").onRun(async () => {
     functions.logger.info("Sending group digests");
     await sendGroupDigests();
+  });
+
+export const sendDigDeeperMorning = functions.pubsub.schedule("0 8 * * *").onRun(async () => {
+    functions.logger.info("Sending Dig Deeper morning reminders");
+    await sendDigDeeperMorningReminder();
   });
 
 // ── HTTPS Callable: AI Study ──────────────────────────────────────────────────
@@ -1225,4 +1312,116 @@ Include 2-4 key words in wordStudy. Pick the most theologically significant word
   const end = cleaned.lastIndexOf('}');
   const parsed = JSON.parse(cleaned.substring(start, end + 1));
   return { ...parsed, remaining: usage.remaining };
+});
+
+// ── Dig Deeper: Generate Study ────────────────────────────────────────────────
+
+export const generateDigDeeperStudyFn = functions.https.onCall(async (reqData, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError("unauthenticated", "Must be signed in");
+  }
+
+  const uid = context.auth.uid;
+  const req = reqData as DigDeeperStudyRequest;
+
+  if (!req.bookId) {
+    throw new functions.https.HttpsError("invalid-argument", "Missing bookId");
+  }
+
+  // Cache key: uid/bookId_chapter_method
+  const cacheKey = `${req.bookId}_${req.chapter}_${req.method}`;
+  const cacheRef = db.collection("digDeeperStudyCache").doc(uid).collection("sessions").doc(cacheKey);
+
+  const cached = await cacheRef.get();
+  if (cached.exists) {
+    const d = cached.data()!;
+    const age = Date.now() - (d.cachedAt as admin.firestore.Timestamp).toMillis();
+    if (age < 7 * 24 * 60 * 60 * 1000) {
+      return d.study;
+    }
+  }
+
+  const study = await generateDigDeeperStudy(req);
+
+  await cacheRef.set({
+    study,
+    cachedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  return study;
+});
+
+// ── Dig Deeper: Ask Question ──────────────────────────────────────────────────
+
+export const askDigDeeperQuestionFn = functions.https.onCall(async (reqData, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError("unauthenticated", "Must be signed in");
+  }
+
+  // Pro check — verify active subscription in Firestore
+  const uid = context.auth.uid;
+  const userDoc = await db.collection("users").doc(uid).get();
+  const isPro = userDoc.data()?.isPro === true;
+  if (!isPro) {
+    throw new functions.https.HttpsError("permission-denied", "Dig Deeper Pro required");
+  }
+
+  const { question, passage, passageText, history } = reqData as {
+    question: string;
+    passage: string;
+    passageText: string;
+    history: Array<{ role: string; content: string }>;
+  };
+
+  if (!question || !passage) {
+    throw new functions.https.HttpsError("invalid-argument", "Missing question or passage");
+  }
+
+  const answer = await askDigDeeperQuestion(question, passage, passageText ?? "", history ?? []);
+  return { answer };
+});
+
+// ── Dig Deeper: Notes AI Insights ────────────────────────────────────────────
+
+export const getNotesInsightsFn = functions.https.onCall(async (reqData, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError("unauthenticated", "Must be signed in");
+  }
+
+  const { notes } = reqData as {
+    notes: Array<{ title: string; type: string; content?: string; passage?: string; speaker?: string }>;
+  };
+
+  if (!notes || notes.length === 0) {
+    throw new functions.https.HttpsError("invalid-argument", "No notes provided");
+  }
+
+  const client = getClaudeClient();
+
+  const notesSummary = notes
+    .map((n, i) => {
+      const parts = [`${i + 1}. [${n.type}] "${n.title}"`];
+      if (n.passage) parts.push(`   Passage: ${n.passage}`);
+      if (n.speaker) parts.push(`   Speaker: ${n.speaker}`);
+      if (n.content) parts.push(`   "${n.content.slice(0, 300)}${n.content.length > 300 ? '…' : ''}"`);
+      return parts.join('\n');
+    })
+    .join('\n\n');
+
+  const response = await client.messages.create({
+    model: MODELS.haiku,
+    max_tokens: 600,
+    system: `You are a thoughtful Bible study companion. Analyze a user's study notes and identify spiritual themes, patterns, and growth. Be encouraging and specific. Respond in JSON with keys: themes (array of 3 strings, each a short theme name), summary (2-3 sentence narrative about their study journey), growthArea (one sentence on what stands out about their spiritual focus), suggestedNext (one sentence suggesting what to explore next based on their patterns).`,
+    messages: [
+      {
+        role: "user",
+        content: `Here are my Bible study notes:\n\n${notesSummary}\n\nPlease analyze these and give me insights about my study journey.`,
+      },
+    ],
+  });
+
+  const raw = (response.content[0] as { text: string }).text.trim();
+  const jsonMatch = raw.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new functions.https.HttpsError("internal", "Failed to parse insights");
+  return JSON.parse(jsonMatch[0]);
 });
