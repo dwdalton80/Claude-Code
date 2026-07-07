@@ -37,6 +37,8 @@ export interface NotificationPayload {
   body: string;
   data?: Record<string, string>;
   imageUrl?: string;
+  /** If set, only send to tokens where app === appFilter (e.g. 'digdeeper' or 'studyfire') */
+  appFilter?: string;
 }
 
 export async function sendPushNotification(payload: NotificationPayload): Promise<void> {
@@ -48,7 +50,20 @@ export async function sendPushNotification(payload: NotificationPayload): Promis
 
   if (tokenSnap.empty) return;
 
-  const tokens = tokenSnap.docs.map((d) => d.data().token as string).filter(Boolean);
+  const tokens = tokenSnap.docs
+    .filter((d) => {
+      if (!payload.appFilter) return true;
+      const tokenApp = d.data().app as string | undefined;
+      // Legacy tokens (no app field) are treated as studyfire tokens for
+      // backward compat — they predate the app-tagging system.
+      // digdeeper tokens always require an explicit tag.
+      if (payload.appFilter === "studyfire") {
+        return !tokenApp || tokenApp === "studyfire";
+      }
+      return tokenApp === payload.appFilter;
+    })
+    .map((d) => d.data().token as string)
+    .filter(Boolean);
   if (tokens.length === 0) return;
 
   const message: admin.messaging.MulticastMessage = {
@@ -63,7 +78,7 @@ export async function sendPushNotification(payload: NotificationPayload): Promis
       payload: {
         aps: {
           sound: "default",
-          badge: 1,
+          badge: 0,  // Always clear badge count — never accumulate
         },
       },
     },
@@ -110,6 +125,7 @@ export async function sendStreakReminders(): Promise<void> {
       title: streak > 1 ? `🔥 ${streak}-Day Streak at Risk!` : "StudyFire 🔥",
       body,
       data: { type: "streak_reminder", action: "open_quest" },
+      appFilter: "studyfire",
     });
 
     // Update last variant index
@@ -152,6 +168,7 @@ export async function sendFocusCompanion(): Promise<void> {
       title: "StudyFire — Morning Verse",
       body: `${verse.reference}: "${verse.text.slice(0, 80)}${verse.text.length > 80 ? "…" : ""}"`,
       data: { type: "focus_companion", reference: verse.reference },
+      appFilter: "studyfire",
     });
   });
 
@@ -210,6 +227,7 @@ export async function sendGroupDigests(): Promise<void> {
         title: `📖 ${groupName}`,
         body: `${activityCount} new activit${activityCount === 1 ? "y" : "ies"} — see what your group is up to`,
         data: { type: "group_digest", groupId },
+        appFilter: "studyfire",
       });
     }
   }
