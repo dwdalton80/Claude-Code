@@ -4,7 +4,7 @@ import { generateSparkQuestion } from "./claude/spark_questions";
 import { generateAiStudy, StudyContext } from "./claude/ai_study";
 import { generateDigDeeperStudy, askDigDeeperQuestion, DigDeeperStudyRequest } from "./claude/dig_deeper_study";
 import { generateQuizBatch, generateWordOfDay } from "./claude/quiz_generation";
-import { generateSermonDebrief, suggestSermonTitle, DebriefContext } from "./claude/sermon_debrief";
+import { generateSermonDebrief, suggestSermonTitle, generateNoteDevotional, DebriefContext } from "./claude/sermon_debrief";
 import { getClaudeClient, MODELS, StudyLevel, studyLevelInstructions } from "./claude/client";
 import { recordStudyActivity, replenishGraceDays } from "./gamification/streak_manager";
 import { sm2Update, scoreToGrade } from "./gamification/sm2_algorithm";
@@ -25,7 +25,7 @@ const db = admin.firestore();
  * Pre-generates today's Spark question for each active passage.
  * One Claude call per passage, result shared with ALL free users.
  */
-export const generateDailySpark = functions.pubsub.schedule("0 2 * * *").onRun(async () => {
+export const generateDailySpark = functions.pubsub.schedule("0 2 * * *").timeZone("America/Chicago").onRun(async () => {
     functions.logger.info("Generating daily spark questions");
 
     const now = new Date();
@@ -127,9 +127,316 @@ const _FOCUS_VERSES: { text: string; reference: string }[] = [
   { text: "Taste and see that the Lord is good; blessed is the one who takes refuge in him.", reference: "Psalm 34:8" },
   { text: "The Lord your God is with you, the Mighty Warrior who saves. He will take great delight in you.", reference: "Zephaniah 3:17" },
   { text: "This is the day the Lord has made; let us rejoice and be glad in it.", reference: "Psalm 118:24" },
+  // ── Extended set — brings total to 365 for full-year rotation ────────────
+  { text: "The Lord is my rock, my fortress and my deliverer; my God is my rock, in whom I take refuge.", reference: "Psalm 18:2" },
+  { text: "Commit to the Lord whatever you do, and he will establish your plans.", reference: "Proverbs 16:3" },
+  { text: "Have I not commanded you? Be strong and courageous. Do not be afraid; do not be discouraged.", reference: "Joshua 1:9" },
+  { text: "Search me, God, and know my heart; test me and know my anxious thoughts.", reference: "Psalm 139:23" },
+  { text: "The Lord is good, a refuge in times of trouble. He cares for those who trust in him.", reference: "Nahum 1:7" },
+  { text: "Humble yourselves, therefore, under God's mighty hand, that he may lift you up in due time.", reference: "1 Peter 5:6" },
+  { text: "Let the word of Christ dwell in you richly as you teach and admonish one another with all wisdom.", reference: "Colossians 3:16" },
+  { text: "I lift up my eyes to the mountains — where does my help come from? My help comes from the Lord, the Maker of heaven and earth.", reference: "Psalm 121:1-2" },
+  { text: "Do not let your hearts be troubled. You believe in God; believe also in me.", reference: "John 14:1" },
+  { text: "For we live by faith, not by sight.", reference: "2 Corinthians 5:7" },
+  { text: "Draw near to God, and he will draw near to you.", reference: "James 4:8" },
+  { text: "The Lord will fight for you; you need only to be still.", reference: "Exodus 14:14" },
+  { text: "Blessed are the pure in heart, for they will see God.", reference: "Matthew 5:8" },
+  { text: "A friend loves at all times, and a brother is born for a time of adversity.", reference: "Proverbs 17:17" },
+  { text: "The Lord is my strength and my song; he has given me victory.", reference: "Exodus 15:2" },
+  { text: "In him we have redemption through his blood, the forgiveness of sins, in accordance with the riches of God's grace.", reference: "Ephesians 1:7" },
+  { text: "You will seek me and find me when you seek me with all your heart.", reference: "Jeremiah 29:13" },
+  { text: "My flesh and my heart may fail, but God is the strength of my heart and my portion forever.", reference: "Psalm 73:26" },
+  { text: "For it is God who works in you to will and to act in order to fulfill his good purpose.", reference: "Philippians 2:13" },
+  { text: "He is before all things, and in him all things hold together.", reference: "Colossians 1:17" },
+  { text: "God is not unjust; he will not forget your work and the love you have shown him.", reference: "Hebrews 6:10" },
+  { text: "I sought the Lord, and he answered me; he delivered me from all my fears.", reference: "Psalm 34:4" },
+  { text: "The name of the Lord is a fortified tower; the righteous run to it and are safe.", reference: "Proverbs 18:10" },
+  { text: "There is no fear in love. But perfect love drives out fear.", reference: "1 John 4:18" },
+  { text: "Blessed is the one who perseveres under trial because, having stood the test, that person will receive the crown of life.", reference: "James 1:12" },
+  { text: "The Lord watches over you — the Lord is your shade at your right hand.", reference: "Psalm 121:5" },
+  { text: "For we are God's handiwork, created in Christ Jesus to do good works.", reference: "Ephesians 2:10" },
+  { text: "Whoever drinks the water I give them will never thirst. Indeed, the water I give them will become in them a spring of water welling up to eternal life.", reference: "John 4:14" },
+  { text: "The Lord gives strength to his people; the Lord blesses his people with peace.", reference: "Psalm 29:11" },
+  { text: "In their hearts humans plan their course, but the Lord establishes their steps.", reference: "Proverbs 16:9" },
+  { text: "Not by might nor by power, but by my Spirit, says the Lord Almighty.", reference: "Zechariah 4:6" },
+  { text: "Come near to God and he will come near to you.", reference: "James 4:8" },
+  { text: "Every good and perfect gift is from above, coming down from the Father of the heavenly lights.", reference: "James 1:17" },
+  { text: "The Lord is my helper; I will not be afraid. What can mere mortals do to me?", reference: "Hebrews 13:6" },
+  { text: "Praise the Lord, my soul, and forget not all his benefits — who forgives all your sins and heals all your diseases.", reference: "Psalm 103:2-3" },
+  { text: "But God demonstrates his own love for us in this: While we were still sinners, Christ died for us.", reference: "Romans 5:8" },
+  { text: "How great is the love the Father has lavished on us, that we should be called children of God!", reference: "1 John 3:1" },
+  { text: "For where your treasure is, there your heart will be also.", reference: "Matthew 6:21" },
+  { text: "Whoever finds their life will lose it, and whoever loses their life for my sake will find it.", reference: "Matthew 10:39" },
+  { text: "I am the resurrection and the life. The one who believes in me will live, even though they die.", reference: "John 11:25" },
+  { text: "Let us hold unswervingly to the hope we profess, for he who promised is faithful.", reference: "Hebrews 10:23" },
+  { text: "The Lord is close to all who call on him, to all who call on him in truth.", reference: "Psalm 145:18" },
+  { text: "For the Son of Man came to seek and to save the lost.", reference: "Luke 19:10" },
+  { text: "I have been crucified with Christ. It is no longer I who live, but Christ who lives in me.", reference: "Galatians 2:20" },
+  { text: "Be completely humble and gentle; be patient, bearing with one another in love.", reference: "Ephesians 4:2" },
+  { text: "The Lord reigns forever; he has established his throne for judgment.", reference: "Psalm 9:7" },
+  { text: "Do not be overcome by evil, but overcome evil with good.", reference: "Romans 12:21" },
+  { text: "He who began a good work in you will carry it on to completion until the day of Christ Jesus.", reference: "Philippians 1:6" },
+  { text: "May the God of hope fill you with all joy and peace as you trust in him.", reference: "Romans 15:13" },
+  { text: "Where can I go from your Spirit? Where can I flee from your presence?", reference: "Psalm 139:7" },
+  { text: "Consider it pure joy, my brothers and sisters, whenever you face trials of many kinds.", reference: "James 1:2" },
+  { text: "Love your enemies and pray for those who persecute you.", reference: "Matthew 5:44" },
+  { text: "The Lord himself goes before you and will be with you; he will never leave you nor forsake you. Do not be afraid.", reference: "Deuteronomy 31:8" },
+  { text: "He gives power to the faint, and to him who has no might he increases strength.", reference: "Isaiah 40:29" },
+  { text: "Surely goodness and love will follow me all the days of my life, and I will dwell in the house of the Lord forever.", reference: "Psalm 23:6" },
+  { text: "I am the bread of life. Whoever comes to me will never go hungry, and whoever believes in me will never be thirsty.", reference: "John 6:35" },
+  { text: "So if the Son sets you free, you will be free indeed.", reference: "John 8:36" },
+  { text: "Now may the Lord of peace himself give you peace at all times and in every way.", reference: "2 Thessalonians 3:16" },
+  { text: "The Spirit of God, who raised Jesus from the dead, lives in you.", reference: "Romans 8:11" },
+  { text: "Blessed are those who hunger and thirst for righteousness, for they will be filled.", reference: "Matthew 5:6" },
+  { text: "I will instruct you and teach you in the way you should go; I will counsel you with my loving eye on you.", reference: "Psalm 32:8" },
+  { text: "But the fruit of the Spirit is love, joy, peace, forbearance, kindness, goodness, faithfulness.", reference: "Galatians 5:22" },
+  { text: "Do nothing out of selfish ambition or vain conceit. Rather, in humility value others above yourselves.", reference: "Philippians 2:3" },
+  { text: "And my God will meet all your needs according to the riches of his glory in Christ Jesus.", reference: "Philippians 4:19" },
+  { text: "For our struggle is not against flesh and blood, but against the spiritual forces of evil in the heavenly realms.", reference: "Ephesians 6:12" },
+  { text: "Love must be sincere. Hate what is evil; cling to what is good.", reference: "Romans 12:9" },
+  { text: "Give thanks to the Lord, for he is good; his love endures forever.", reference: "Psalm 136:1" },
+  { text: "For this reason I kneel before the Father, from whom every family in heaven and on earth derives its name.", reference: "Ephesians 3:14-15" },
+  { text: "When I am afraid, I put my trust in you.", reference: "Psalm 56:3" },
+  { text: "The Lord is my light and my salvation — whom shall I fear? The Lord is the stronghold of my life — of whom shall I be afraid?", reference: "Psalm 27:1" },
+  { text: "Peace I leave with you; my peace I give you. I do not give to you as the world gives. Do not let your hearts be troubled.", reference: "John 14:27" },
+  { text: "Who shall separate us from the love of Christ? Shall trouble or hardship or persecution or famine or nakedness or danger or sword?", reference: "Romans 8:35" },
+  { text: "For the Lord is good and his love endures forever; his faithfulness continues through all generations.", reference: "Psalm 100:5" },
+  { text: "Finally, brothers and sisters, whatever is true, whatever is noble, whatever is right — think about such things.", reference: "Philippians 4:8" },
+  { text: "Therefore, since we are surrounded by such a great cloud of witnesses, let us throw off everything that hinders.", reference: "Hebrews 12:1" },
+  { text: "For the Lord takes delight in his people; he crowns the humble with victory.", reference: "Psalm 149:4" },
+  { text: "Anyone who loves me will obey my teaching. My Father will love them, and we will come to them and make our home with them.", reference: "John 14:23" },
+  { text: "The Lord is not slow in keeping his promise, as some understand slowness. Instead he is patient with you.", reference: "2 Peter 3:9" },
+  { text: "See, I am doing a new thing! Now it springs up; do you not perceive it?", reference: "Isaiah 43:19" },
+  { text: "But thanks be to God! He gives us the victory through our Lord Jesus Christ.", reference: "1 Corinthians 15:57" },
+  { text: "Your statutes are my heritage forever; they are the joy of my heart.", reference: "Psalm 119:111" },
+  { text: "To him who is able to do immeasurably more than all we ask or imagine, according to his power that is at work within us — to him be glory.", reference: "Ephesians 3:20-21" },
+  { text: "What, then, shall we say in response to these things? If God is for us, who can be against us?", reference: "Romans 8:31" },
+  { text: "Let your gentleness be evident to all. The Lord is near.", reference: "Philippians 4:5" },
+  { text: "The Lord upholds all who fall and lifts up all who are bowed down.", reference: "Psalm 145:14" },
+  { text: "Do not judge, and you will not be judged. Do not condemn, and you will not be condemned. Forgive, and you will be forgiven.", reference: "Luke 6:37" },
+  { text: "The heart of the discerning acquires knowledge, for the ears of the wise seek it out.", reference: "Proverbs 18:15" },
+  { text: "Blessed are the merciful, for they will be shown mercy.", reference: "Matthew 5:7" },
+  { text: "You, Lord, are my lamp; the Lord turns my darkness into light.", reference: "2 Samuel 22:29" },
+  { text: "The Lord your God is in your midst, a mighty one who will save; he will rejoice over you with gladness.", reference: "Zephaniah 3:17" },
+  { text: "Praise be to the God and Father of our Lord Jesus Christ, the Father of compassion and the God of all comfort.", reference: "2 Corinthians 1:3" },
+  { text: "We love because he first loved us.", reference: "1 John 4:19" },
+  { text: "For the wages of sin is death, but the gift of God is eternal life in Christ Jesus our Lord.", reference: "Romans 6:23" },
+  { text: "I praise you because I am fearfully and wonderfully made; your works are wonderful.", reference: "Psalm 139:14" },
+  { text: "For where two or three gather in my name, there am I with them.", reference: "Matthew 18:20" },
+  { text: "And the God of all grace, who called you to his eternal glory in Christ, after you have suffered a little while, will himself restore you.", reference: "1 Peter 5:10" },
+  { text: "Do not be anxious about anything, but in every situation, by prayer and petition, with thanksgiving, present your requests to God.", reference: "Philippians 4:6" },
+  { text: "He makes me lie down in green pastures, he leads me beside quiet waters, he refreshes my soul.", reference: "Psalm 23:2-3" },
+  { text: "Come to me, all you who are weary and burdened, and I will give you rest. Take my yoke upon you and learn from me.", reference: "Matthew 11:28-29" },
+  { text: "Yet this I call to mind and therefore I have hope: Because of the Lord's great love we are not consumed.", reference: "Lamentations 3:21-22" },
+  { text: "Jesus looked at them and said, 'With man this is impossible, but not with God; all things are possible with God.'", reference: "Mark 10:27" },
+  { text: "But those who hope in the Lord will renew their strength. They will soar on wings like eagles.", reference: "Isaiah 40:31" },
+  { text: "I have told you these things, so that in me you may have peace. In this world you will have trouble. But take heart! I have overcome the world.", reference: "John 16:33" },
+  { text: "He restores my soul. He leads me in paths of righteousness for his name's sake.", reference: "Psalm 23:3" },
+  { text: "Devote yourselves to prayer, being watchful and thankful.", reference: "Colossians 4:2" },
+  { text: "I will praise you, Lord, with all my heart; I will tell of all your wonderful deeds.", reference: "Psalm 9:1" },
+  { text: "For in him we live and move and have our being.", reference: "Acts 17:28" },
+  { text: "But seek first his kingdom and his righteousness, and all these things will be given to you as well.", reference: "Matthew 6:33" },
+  { text: "May the Lord make your love increase and overflow for each other and for everyone else.", reference: "1 Thessalonians 3:12" },
+  { text: "The Lord bless you and keep you; the Lord make his face shine on you and be gracious to you; the Lord turn his face toward you and give you peace.", reference: "Numbers 6:24-26" },
+  { text: "In the beginning was the Word, and the Word was with God, and the Word was God.", reference: "John 1:1" },
+  { text: "Do not be conformed to this world, but be transformed by the renewal of your mind.", reference: "Romans 12:2" },
+  { text: "The Lord is my shepherd; I shall not want.", reference: "Psalm 23:1" },
+  { text: "Blessed are the poor in spirit, for theirs is the kingdom of heaven.", reference: "Matthew 5:3" },
+  { text: "You are my hiding place; you will protect me from trouble and surround me with songs of deliverance.", reference: "Psalm 32:7" },
+  { text: "And whatever you do, whether in word or deed, do it all in the name of the Lord Jesus.", reference: "Colossians 3:17" },
+  { text: "Whoever claims to love God yet hates a brother or sister is a liar.", reference: "1 John 4:20" },
+  { text: "But you, Lord, are a compassionate and gracious God, slow to anger, abounding in love and faithfulness.", reference: "Psalm 86:15" },
+  { text: "For the Lord is righteous, he loves justice; the upright will see his face.", reference: "Psalm 11:7" },
+  { text: "I will never leave you nor forsake you.", reference: "Hebrews 13:5" },
+  { text: "The Lord is compassionate and gracious, slow to anger, abounding in love.", reference: "Psalm 103:8" },
+  { text: "Therefore confess your sins to each other and pray for each other so that you may be healed.", reference: "James 5:16" },
+  { text: "No temptation has overtaken you except what is common to mankind. And God is faithful.", reference: "1 Corinthians 10:13" },
+  { text: "Teach me your way, Lord, that I may rely on your faithfulness; give me an undivided heart.", reference: "Psalm 86:11" },
+  { text: "I can do all this through him who gives me strength.", reference: "Philippians 4:13" },
+  { text: "The Lord your God is with you wherever you go.", reference: "Joshua 1:9" },
+  { text: "He is the same God who equips me with strength and makes my way perfect.", reference: "Psalm 18:32" },
+  { text: "And let us run with perseverance the race marked out for us, fixing our eyes on Jesus.", reference: "Hebrews 12:1-2" },
+  { text: "Shout for joy to the Lord, all the earth. Worship the Lord with gladness.", reference: "Psalm 100:1-2" },
+  { text: "For God so loved the world that he gave his one and only Son.", reference: "John 3:16" },
+  { text: "The thief comes only to steal and kill and destroy; I have come that they may have life, and have it to the full.", reference: "John 10:10" },
+  { text: "I am the vine; you are the branches. If you remain in me and I in you, you will bear much fruit.", reference: "John 15:5" },
+  { text: "For my thoughts are not your thoughts, neither are your ways my ways, declares the Lord.", reference: "Isaiah 55:8" },
+  { text: "The Lord is good to all; he has compassion on all he has made.", reference: "Psalm 145:9" },
+  { text: "Blessed are the peacemakers, for they will be called children of God.", reference: "Matthew 5:9" },
+  { text: "Be joyful in hope, patient in affliction, faithful in prayer.", reference: "Romans 12:12" },
+  { text: "Nothing in all creation is hidden from God's sight.", reference: "Hebrews 4:13" },
+  { text: "He who dwells in the shelter of the Most High will rest in the shadow of the Almighty.", reference: "Psalm 91:1" },
+  { text: "So do not fear, for I am with you; do not be dismayed, for I am your God. I will strengthen you and help you.", reference: "Isaiah 41:10" },
+  { text: "Rejoice in the Lord always. I will say it again: Rejoice!", reference: "Philippians 4:4" },
+  { text: "He will wipe every tear from their eyes. There will be no more death or mourning or crying or pain.", reference: "Revelation 21:4" },
+  { text: "Know that the Lord is God. It is he who made us, and we are his; we are his people, the sheep of his pasture.", reference: "Psalm 100:3" },
+  { text: "The earth is the Lord's, and everything in it, the world, and all who live in it.", reference: "Psalm 24:1" },
+  { text: "For to me, to live is Christ and to die is gain.", reference: "Philippians 1:21" },
+  { text: "Whoever sows generously will also reap generously.", reference: "2 Corinthians 9:6" },
+  { text: "The name of the Lord is a strong tower; the righteous man runs into it and is safe.", reference: "Proverbs 18:10" },
+  { text: "Since, then, you have been raised with Christ, set your hearts on things above.", reference: "Colossians 3:1" },
+  { text: "You, Lord, are forgiving and good, abounding in love to all who call to you.", reference: "Psalm 86:5" },
+  { text: "My God, my God, why have you forsaken me? Yet you are enthroned as the Holy One.", reference: "Psalm 22:1,3" },
+  { text: "Fear the Lord your God, serve him only and take your oaths in his name.", reference: "Deuteronomy 6:13" },
+  { text: "God is our refuge and strength, an ever-present help in trouble.", reference: "Psalm 46:1" },
+  { text: "Create in me a pure heart, O God, and renew a steadfast spirit within me.", reference: "Psalm 51:10" },
+  { text: "How lovely is your dwelling place, Lord Almighty! My soul yearns, even faints, for the courts of the Lord.", reference: "Psalm 84:1-2" },
+  { text: "A cheerful heart is good medicine, but a crushed spirit dries up the bones.", reference: "Proverbs 17:22" },
+  { text: "God is spirit, and his worshipers must worship in the Spirit and in truth.", reference: "John 4:24" },
+  { text: "Do not let wisdom and understanding out of your sight; preserve sound judgment and discretion.", reference: "Proverbs 3:21" },
+  { text: "Those who trust in the Lord are like Mount Zion, which cannot be shaken but endures forever.", reference: "Psalm 125:1" },
+  { text: "For no word from God will ever fail.", reference: "Luke 1:37" },
+  { text: "Whoever has the Son has life; whoever does not have the Son of God does not have life.", reference: "1 John 5:12" },
+  { text: "The name of the Lord is a fortified tower; the righteous run to it and are safe.", reference: "Proverbs 18:10" },
+  { text: "Wait for the Lord; be strong and take heart and wait for the Lord.", reference: "Psalm 27:14" },
+  { text: "For I am the Lord your God who takes hold of your right hand and says to you, Do not fear; I will help you.", reference: "Isaiah 41:13" },
+  { text: "This is how we know what love is: Jesus Christ laid down his life for us.", reference: "1 John 3:16" },
+  { text: "He will cover you with his feathers, and under his wings you will find refuge; his faithfulness will be your shield and rampart.", reference: "Psalm 91:4" },
+  { text: "You are a chosen people, a royal priesthood, a holy nation, God's special possession.", reference: "1 Peter 2:9" },
+  { text: "His divine power has given us everything we need for a godly life.", reference: "2 Peter 1:3" },
+  { text: "How priceless is your unfailing love, O God! People take refuge in the shadow of your wings.", reference: "Psalm 36:7" },
+  { text: "Let the morning bring me word of your unfailing love, for I have put my trust in you.", reference: "Psalm 143:8" },
+  { text: "Your word is a lamp for my feet, a light on my path.", reference: "Psalm 119:105" },
+  { text: "See what great love the Father has lavished on us, that we should be called children of God!", reference: "1 John 3:1" },
+  { text: "Yet to all who did receive him, to those who believed in his name, he gave the right to become children of God.", reference: "John 1:12" },
+  { text: "You, Lord, keep my lamp burning; my God turns my darkness into light.", reference: "Psalm 18:28" },
+  { text: "Do your best to present yourself to God as one approved, a worker who does not need to be ashamed.", reference: "2 Timothy 2:15" },
+  { text: "Everyone who calls on the name of the Lord will be saved.", reference: "Romans 10:13" },
+  { text: "Take delight in the Lord, and he will give you the desires of your heart.", reference: "Psalm 37:4" },
+  { text: "For it is by grace you have been saved, through faith — and this is not from yourselves, it is the gift of God.", reference: "Ephesians 2:8" },
+  { text: "The Lord directs the steps of the godly. He delights in every detail of their lives.", reference: "Psalm 37:23" },
+  { text: "Be still before the Lord and wait patiently for him.", reference: "Psalm 37:7" },
+  { text: "How beautiful on the mountains are the feet of those who bring good news, who proclaim peace.", reference: "Isaiah 52:7" },
+  { text: "Let everything that has breath praise the Lord.", reference: "Psalm 150:6" },
+  { text: "Give ear to my words, O Lord; consider my sighing. Listen to my cry for help.", reference: "Psalm 5:1-2" },
+  { text: "My help comes from the Lord, who made heaven and earth.", reference: "Psalm 121:2" },
+  { text: "The eternal God is your refuge, and underneath are the everlasting arms.", reference: "Deuteronomy 33:27" },
+  { text: "I keep my eyes always on the Lord. With him at my right hand, I will not be shaken.", reference: "Psalm 16:8" },
+  { text: "The Lord has done it this very day; let us rejoice today and be glad.", reference: "Psalm 118:24" },
+  { text: "Let us therefore approach God's throne of grace with confidence, so that we may receive mercy.", reference: "Hebrews 4:16" },
+  { text: "He has shown you, O mortal, what is good. And what does the Lord require of you? To act justly and to love mercy and to walk humbly with your God.", reference: "Micah 6:8" },
+  { text: "But the Lord said to Samuel, 'Do not consider his appearance or his height, for the Lord looks at the heart.'", reference: "1 Samuel 16:7" },
+  { text: "You are my God, and I will praise you; you are my God, and I will exalt you.", reference: "Psalm 118:28" },
+  { text: "Now to him who is able to do far more abundantly than all that we ask or think, according to the power at work within us.", reference: "Ephesians 3:20" },
+  { text: "For the mountains may depart and the hills be removed, but my steadfast love shall not depart from you.", reference: "Isaiah 54:10" },
+  { text: "The Lord is good to those whose hope is in him, to the one who seeks him.", reference: "Lamentations 3:25" },
+  { text: "Light in a messenger's eyes brings joy to the heart, and good news gives health to the bones.", reference: "Proverbs 15:30" },
+  { text: "I have hidden your word in my heart that I might not sin against you.", reference: "Psalm 119:11" },
+  { text: "Whether you turn to the right or to the left, your ears will hear a voice behind you, saying, 'This is the way; walk in it.'", reference: "Isaiah 30:21" },
+  { text: "Open my eyes that I may see wonderful things in your law.", reference: "Psalm 119:18" },
+  { text: "The Lord is gracious and righteous; our God is full of compassion.", reference: "Psalm 116:5" },
+  { text: "Enter his gates with thanksgiving and his courts with praise; give thanks to him and praise his name.", reference: "Psalm 100:4" },
+  { text: "A new command I give you: Love one another. As I have loved you, so you must love one another.", reference: "John 13:34" },
+  { text: "For I am the Lord your God, the Holy One of Israel, your Savior.", reference: "Isaiah 43:3" },
+  { text: "You are my refuge and my shield; I have put my hope in your word.", reference: "Psalm 119:114" },
+  { text: "The Lord will keep you from all harm — he will watch over your life.", reference: "Psalm 121:7" },
+  { text: "Let the redeemed of the Lord tell their story — those he redeemed from the hand of the foe.", reference: "Psalm 107:2" },
+  { text: "But I trust in your unfailing love; my heart rejoices in your salvation.", reference: "Psalm 13:5" },
+  { text: "Cast your cares on the Lord and he will sustain you; he will never let the righteous be shaken.", reference: "Psalm 55:22" },
+  { text: "He is the atoning sacrifice for our sins, and not only for ours but also for the sins of the whole world.", reference: "1 John 2:2" },
+  { text: "This is the confidence we have in approaching God: that if we ask anything according to his will, he hears us.", reference: "1 John 5:14" },
+  { text: "The Lord has established his throne in heaven, and his kingdom rules over all.", reference: "Psalm 103:19" },
+  { text: "For all have sinned and fall short of the glory of God, and all are justified freely by his grace.", reference: "Romans 3:23-24" },
+  { text: "Since God did not spare even his own Son but gave him up for us all, won't he also give us everything else?", reference: "Romans 8:32" },
+  { text: "The Lord is righteous in all his ways and faithful in all he does.", reference: "Psalm 145:17" },
+  { text: "Let love and faithfulness never leave you; bind them around your neck, write them on the tablet of your heart.", reference: "Proverbs 3:3" },
+  { text: "I have been young and now I am old, yet I have not seen the righteous forsaken or his children begging for bread.", reference: "Psalm 37:25" },
+  { text: "By wisdom a house is built, and through understanding it is established; through knowledge its rooms are filled with rare and beautiful treasures.", reference: "Proverbs 24:3-4" },
+  { text: "The Lord is my strength and my defense; he has become my salvation.", reference: "Psalm 118:14" },
+  { text: "Be on your guard; stand firm in the faith; be courageous; be strong. Do everything in love.", reference: "1 Corinthians 16:13-14" },
+  { text: "So we say with confidence, 'The Lord is my helper; I will not be afraid.'", reference: "Hebrews 13:6" },
+  { text: "As a father has compassion on his children, so the Lord has compassion on those who fear him.", reference: "Psalm 103:13" },
+  { text: "The Lord is near to all who call on him, to all who call on him in truth.", reference: "Psalm 145:18" },
+  { text: "Let your roots grow down into him, and let your lives be built on him.", reference: "Colossians 2:7" },
+  { text: "Happy are those who find wisdom, and those who get understanding.", reference: "Proverbs 3:13" },
+  { text: "The Lord your God is with you, the Mighty Warrior who saves.", reference: "Zephaniah 3:17" },
+  { text: "Who is like the Lord our God, the One who sits enthroned on high, who stoops down to look on the heavens and the earth?", reference: "Psalm 113:5-6" },
+  { text: "I will sing of the Lord's great love forever; with my mouth I will make your faithfulness known through all generations.", reference: "Psalm 89:1" },
+  { text: "Return to the Lord your God, for he is gracious and compassionate, slow to anger and abounding in love.", reference: "Joel 2:13" },
+  { text: "Therefore, there is now no condemnation for those who are in Christ Jesus.", reference: "Romans 8:1" },
+  { text: "Because of the Lord's great love we are not consumed, for his compassions never fail. They are new every morning.", reference: "Lamentations 3:22-23" },
+  { text: "I will praise God's name in song and glorify him with thanksgiving.", reference: "Psalm 69:30" },
+  { text: "For the Lord is good and his love endures forever; his faithfulness continues through all generations.", reference: "Psalm 100:5" },
+  { text: "He has made everything beautiful in its time. He has also set eternity in the human heart.", reference: "Ecclesiastes 3:11" },
+  { text: "The Lord detests lying lips, but he delights in people who are trustworthy.", reference: "Proverbs 12:22" },
+  { text: "So in everything, do to others what you would have them do to you.", reference: "Matthew 7:12" },
+  { text: "Jesus replied: 'Love the Lord your God with all your heart and with all your soul and with all your mind.'", reference: "Matthew 22:37" },
+  { text: "And I am sure of this, that he who began a good work in you will bring it to completion at the day of Jesus Christ.", reference: "Philippians 1:6" },
+  { text: "Whoever speaks, let him speak as one who speaks oracles of God; whoever serves, let him serve in the strength that God supplies.", reference: "1 Peter 4:11" },
+  { text: "The prayer of a righteous person is powerful and effective.", reference: "James 5:16" },
+  { text: "For the Lord your God is he who goes with you to fight for you against your enemies, to give you the victory.", reference: "Deuteronomy 20:4" },
+  { text: "And Jesus said to him, 'If you can! All things are possible for one who believes.'", reference: "Mark 9:23" },
+  { text: "I am with you and will watch over you wherever you go, and I will bring you back to this land.", reference: "Genesis 28:15" },
+  { text: "The joy of the Lord is your strength.", reference: "Nehemiah 8:10" },
+  { text: "I sought the Lord, and he answered me and delivered me from all my fears.", reference: "Psalm 34:4" },
+  { text: "Truly I tell you, if you have faith as small as a mustard seed, you can say to this mountain, 'Move from here to there,' and it will move.", reference: "Matthew 17:20" },
+  { text: "For you are a people holy to the Lord your God. The Lord your God has chosen you out of all the peoples on the face of the earth to be his people.", reference: "Deuteronomy 7:6" },
+  { text: "Fix your thoughts on what is true, and honorable, and right, and pure, and lovely, and admirable.", reference: "Philippians 4:8" },
+  { text: "You will keep in perfect peace those whose minds are steadfast, because they trust in you.", reference: "Isaiah 26:3" },
+  { text: "He who did not spare his own Son but gave him up for us all, how will he not also with him graciously give us all things?", reference: "Romans 8:32" },
+  { text: "It is God who arms me with strength and keeps my way secure.", reference: "Psalm 18:32" },
+  { text: "Let the peace of Christ rule in your hearts, since as members of one body you were called to peace. And be thankful.", reference: "Colossians 3:15" },
+  { text: "He who finds a wife finds what is good and receives favor from the Lord.", reference: "Proverbs 18:22" },
+  { text: "As iron sharpens iron, so one person sharpens another.", reference: "Proverbs 27:17" },
+  { text: "The Lord your God is in your midst, a mighty one who will save; he will rejoice over you with gladness.", reference: "Zephaniah 3:17" },
+  { text: "Out of his fullness we have all received grace in place of grace already given.", reference: "John 1:16" },
+  { text: "The Spirit himself testifies with our spirit that we are God's children.", reference: "Romans 8:16" },
+  { text: "For the kingdom of God is not a matter of eating and drinking but of righteousness and peace and joy in the Holy Spirit.", reference: "Romans 14:17" },
+  { text: "And now these three remain: faith, hope and love. But the greatest of these is love.", reference: "1 Corinthians 13:13" },
+  { text: "For to set the mind on the flesh is death, but to set the mind on the Spirit is life and peace.", reference: "Romans 8:6" },
+  { text: "The Lord is my shepherd; I shall not want.", reference: "Psalm 23:1" },
+  { text: "Where can I go from your Spirit? Where can I flee from your presence? If I go up to the heavens, you are there.", reference: "Psalm 139:7-8" },
+  { text: "Praise the Lord, all you nations; extol him, all you peoples. For great is his love toward us.", reference: "Psalm 117:1-2" },
+  { text: "So whether you eat or drink or whatever you do, do it all for the glory of God.", reference: "1 Corinthians 10:31" },
+  { text: "For I know that my Redeemer lives, and at the last he will stand upon the earth.", reference: "Job 19:25" },
+  { text: "My sheep listen to my voice; I know them, and they follow me.", reference: "John 10:27" },
+  { text: "The Word became flesh and made his dwelling among us. We have seen his glory.", reference: "John 1:14" },
+  { text: "Yet you, Lord, are our Father. We are the clay, you are the potter; we are all the work of your hand.", reference: "Isaiah 64:8" },
+  { text: "I will meditate on your precepts and fix my eyes on your ways.", reference: "Psalm 119:15" },
+  { text: "He tends his flock like a shepherd: He gathers the lambs in his arms and carries them close to his heart.", reference: "Isaiah 40:11" },
+  { text: "You are my King and my God, who decrees victories for Jacob.", reference: "Psalm 44:4" },
+  { text: "But I have calmed and quieted my soul, like a weaned child with its mother; like a weaned child is my soul within me.", reference: "Psalm 131:2" },
+  { text: "On the last and greatest day of the festival, Jesus stood and said in a loud voice, 'Let anyone who is thirsty come to me and drink.'", reference: "John 7:37" },
+  { text: "Whoever is generous to the poor lends to the Lord, and he will repay him for his deed.", reference: "Proverbs 19:17" },
+  { text: "Let us then with confidence draw near to the throne of grace, that we may receive mercy and find grace to help in time of need.", reference: "Hebrews 4:16" },
+  { text: "Because he loves me, says the Lord, I will rescue him; I will protect him, for he acknowledges my name.", reference: "Psalm 91:14" },
+  { text: "The Lord is a warrior; the Lord is his name.", reference: "Exodus 15:3" },
+  { text: "I have loved you with an everlasting love; I have drawn you with unfailing kindness.", reference: "Jeremiah 31:3" },
+  { text: "Righteousness exalts a nation, but sin condemns any people.", reference: "Proverbs 14:34" },
+  { text: "He has delivered us from the domain of darkness and transferred us to the kingdom of his beloved Son.", reference: "Colossians 1:13" },
+  { text: "And we know that God causes all things to work together for good to those who love God.", reference: "Romans 8:28" },
+  { text: "There is no wisdom, no insight, no plan that can succeed against the Lord.", reference: "Proverbs 21:30" },
+  { text: "One thing I ask from the Lord, this only do I seek: that I may dwell in the house of the Lord all the days of my life.", reference: "Psalm 27:4" },
+  { text: "Your love, Lord, reaches to the heavens, your faithfulness to the skies.", reference: "Psalm 36:5" },
+  { text: "For God chose the foolish things of the world to shame the wise; God chose the weak things of the world to shame the strong.", reference: "1 Corinthians 1:27" },
+  { text: "The Lord's unfailing love surrounds the one who trusts in him.", reference: "Psalm 32:10" },
+  { text: "Just as you received Christ Jesus as Lord, continue to live your lives in him.", reference: "Colossians 2:6" },
+  { text: "My soul glorifies the Lord and my spirit rejoices in God my Savior.", reference: "Luke 1:46-47" },
+  { text: "God sets the lonely in families, he leads out the prisoners with singing.", reference: "Psalm 68:6" },
+  { text: "And we all, who with unveiled faces contemplate the Lord's glory, are being transformed into his image with ever-increasing glory.", reference: "2 Corinthians 3:18" },
+  { text: "No one has ever seen God; but if we love one another, God lives in us and his love is made complete in us.", reference: "1 John 4:12" },
+  { text: "Blessed is the nation whose God is the Lord, the people he chose for his inheritance.", reference: "Psalm 33:12" },
+  { text: "I will exalt you, my God the King; I will praise your name for ever and ever.", reference: "Psalm 145:1" },
+  { text: "As the deer pants for streams of water, so my soul pants for you, my God.", reference: "Psalm 42:1" },
+  { text: "You are my God; have mercy on me, Lord, for I call to you all day long.", reference: "Psalm 86:3" },
+  { text: "Let me hear what God the Lord will speak, for he will speak peace to his people.", reference: "Psalm 85:8" },
+  { text: "For our citizenship is in heaven, from which we also eagerly wait for the Savior.", reference: "Philippians 3:20" },
+  { text: "The Lord is my strength and my shield; my heart trusts in him, and he helps me.", reference: "Psalm 28:7" },
+  { text: "Teach us to number our days, that we may gain a heart of wisdom.", reference: "Psalm 90:12" },
+  { text: "The Lord reigns, he is robed in majesty; the Lord is robed in majesty and armed with strength.", reference: "Psalm 93:1" },
+  { text: "For the Lord is the great God, the great King above all gods.", reference: "Psalm 95:3" },
+  { text: "Blessed are those whose strength is in you, whose hearts are set on pilgrimage.", reference: "Psalm 84:5" },
+  { text: "He who goes out weeping, carrying seed to sow, will return with songs of joy, carrying sheaves with him.", reference: "Psalm 126:6" },
+  { text: "Salvation belongs to the Lord; your blessing be on your people!", reference: "Psalm 3:8" },
+  { text: "For God, who said, 'Let light shine out of darkness,' made his light shine in our hearts.", reference: "2 Corinthians 4:6" },
+  { text: "I will praise you, Lord my God, with all my heart; I will glorify your name forever.", reference: "Psalm 86:12" },
+  { text: "When you pass through the waters, I will be with you; and when you pass through the rivers, they will not sweep over you.", reference: "Isaiah 43:2" },
+  { text: "Hear my prayer, Lord; let my cry for help come to you.", reference: "Psalm 102:1" },
+  { text: "Lord, you alone are my portion and my cup; you make my lot secure.", reference: "Psalm 16:5" },
+  { text: "The fear of the Lord is the beginning of wisdom; all who follow his precepts have good understanding.", reference: "Psalm 111:10" },
 ];
 
-export const generateDailyCache = functions.pubsub.schedule("30 2 * * *").onRun(async () => {
+export const generateDailyCache = functions.pubsub.schedule("30 2 * * *").timeZone("America/Chicago").onRun(async () => {
     functions.logger.info("Generating daily cache (quiz + word of day + focus verse)");
 
     const today = dateKey(new Date());
@@ -165,7 +472,7 @@ export const generateDailyCache = functions.pubsub.schedule("30 2 * * *").onRun(
           .collection(passageId).doc("kjv").get();
 
         if (sparkDoc.exists) {
-          const passageText = (sparkDoc.data() as { text: string }).text;
+          const passageText = (sparkDoc.data() as { verseText: string }).verseText;
           const wordOfDay = await generateWordOfDay(passageText, reference, "kjv");
           await db.collection("dailycache").doc(today).set(
             { wordOfDay, generatedAt: admin.firestore.FieldValue.serverTimestamp() },
@@ -179,18 +486,63 @@ export const generateDailyCache = functions.pubsub.schedule("30 2 * * *").onRun(
     }
 
     // ── Focus Verse (Verse of the Day) ────────────────────────────────────────
+    let focusVerse: { text: string; reference: string } | null = null;
     try {
       const now = new Date();
       const startOfYear = new Date(now.getFullYear(), 0, 0);
       const dayOfYear = Math.floor((now.getTime() - startOfYear.getTime()) / 86_400_000);
-      const verse = _FOCUS_VERSES[dayOfYear % _FOCUS_VERSES.length];
+      focusVerse = _FOCUS_VERSES[dayOfYear % _FOCUS_VERSES.length];
       await db.collection("dailycache").doc(today).set(
-        { focusVerse: verse },
+        { focusVerse },
         { merge: true }
       );
-      functions.logger.info("Focus verse set", { reference: verse.reference });
+      functions.logger.info("Focus verse set", { reference: focusVerse.reference });
     } catch (err) {
       functions.logger.error("Focus verse generation failed", err);
+    }
+
+    // ── Daily Devotional (Dig Deeper) ─────────────────────────────────────────
+    if (focusVerse) {
+      try {
+        const ddClient = getClaudeClient();
+        const ddResponse = await ddClient.messages.create({
+          model: MODELS.haiku,
+          max_tokens: 600,
+          system: `You are a daily devotional writer for Dig Deeper, a Bible study app for Christians who want to go deeper in Scripture.
+Write warm, thoughtful devotionals that help people encounter God in their study. Your tone is pastoral but accessible — not academic, not preachy.
+Always respond with valid JSON only — no markdown fences, no extra text.`,
+          messages: [{
+            role: "user",
+            content: `Write a brief daily devotional for this verse:
+
+${focusVerse.reference}: "${focusVerse.text}"
+
+Return ONLY this JSON:
+{
+  "reflection": "3-4 warm, encouraging sentences that unpack the verse's meaning and why it matters today.",
+  "prayerPrompt": "A single sentence beginning with 'Lord,' that turns the verse into a personal prayer.",
+  "reflectionQuestion": "One thoughtful question to carry into the day — starts with a verb (e.g. 'Where', 'How', 'What')."
+}`,
+          }],
+        });
+
+        const ddRaw = (ddResponse.content[0] as { type: "text"; text: string }).text.trim();
+        const ddStart = ddRaw.indexOf("{");
+        const ddEnd = ddRaw.lastIndexOf("}");
+        const devotional = JSON.parse(ddRaw.substring(ddStart, ddEnd + 1)) as {
+          reflection: string;
+          prayerPrompt: string;
+          reflectionQuestion: string;
+        };
+
+        await db.collection("dailycache").doc(today).set(
+          { devotional, devotionalGeneratedAt: admin.firestore.FieldValue.serverTimestamp() },
+          { merge: true }
+        );
+        functions.logger.info("Dig Deeper daily devotional generated", { reference: focusVerse.reference });
+      } catch (err) {
+        functions.logger.error("Dig Deeper devotional generation failed", err);
+      }
     }
   });
 
@@ -199,7 +551,7 @@ export const generateDailyCache = functions.pubsub.schedule("30 2 * * *").onRun(
  * tied to today's Quest passage. Cached in sparkcache/{today}.devotional so the app
  * can read it without a per-user Claude call.
  */
-export const generateDailyDevotional = functions.pubsub.schedule("10 2 * * *").onRun(async () => {
+export const generateDailyDevotional = functions.pubsub.schedule("10 2 * * *").timeZone("America/Chicago").onRun(async () => {
     functions.logger.info("Generating daily devotional");
 
     const today = dateKey(new Date());
@@ -221,7 +573,7 @@ export const generateDailyDevotional = functions.pubsub.schedule("10 2 * * *").o
       return;
     }
 
-    const passageText = (sparkDoc.data() as { text: string }).text;
+    const passageText = (sparkDoc.data() as { verseText: string }).verseText;
 
     const client = getClaudeClient();
     const response = await client.messages.create({
@@ -266,29 +618,29 @@ Return ONLY this JSON:
 /**
  * Replenishes grace day tokens every Monday.
  */
-export const weeklyGraceReplenish = functions.pubsub.schedule("0 0 * * 1").onRun(async () => {
+export const weeklyGraceReplenish = functions.pubsub.schedule("0 0 * * 1").timeZone("America/Chicago").onRun(async () => {
     functions.logger.info("Replenishing grace day tokens");
     await replenishGraceDays();
   });
 
 // ── Scheduled: Notifications ─────────────────────────────────────────────────
 
-export const sendEveningStreakReminders = functions.pubsub.schedule("0 20 * * *").onRun(async () => {
+export const sendEveningStreakReminders = functions.pubsub.schedule("0 20 * * *").timeZone("America/Chicago").onRun(async () => {
     functions.logger.info("Sending streak reminders");
     await sendStreakReminders();
   });
 
-export const sendMorningFocusCompanion = functions.pubsub.schedule("30 9 * * *").onRun(async () => {
+export const sendMorningFocusCompanion = functions.pubsub.schedule("30 9 * * *").timeZone("America/Chicago").onRun(async () => {
     functions.logger.info("Sending focus companion");
     await sendFocusCompanion();
   });
 
-export const sendDailyGroupDigests = functions.pubsub.schedule("0 19 * * *").onRun(async () => {
+export const sendDailyGroupDigests = functions.pubsub.schedule("0 19 * * *").timeZone("America/Chicago").onRun(async () => {
     functions.logger.info("Sending group digests");
     await sendGroupDigests();
   });
 
-export const sendDigDeeperMorning = functions.pubsub.schedule("0 8 * * *").onRun(async () => {
+export const sendDigDeeperMorning = functions.pubsub.schedule("0 8 * * *").timeZone("America/Chicago").onRun(async () => {
     functions.logger.info("Sending Dig Deeper morning reminders");
     await sendDigDeeperMorningReminder();
   });
@@ -363,6 +715,31 @@ export const suggestTitle = functions.https.onCall(async (reqData, context) => {
 
   const { noteContent } = reqData as { noteContent: string };
   return { title: await suggestSermonTitle(noteContent) };
+});
+
+/// ── HTTPS Callable: Create Devotional from Sermon Note ────────────────────────
+
+export const generateNoteDevotionalFn = functions.https.onCall(async (reqData, context) => {
+  if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "Must be signed in");
+  const _uid = context.auth.uid;
+  const _userDoc = await db.collection("users").doc(_uid).get();
+  if (_userDoc.data()?.isPro !== true) {
+    throw new functions.https.HttpsError("permission-denied", "Dig Deeper Pro required");
+  }
+  const raw = reqData ?? {};
+  const { noteTitle, noteContent, speaker, passage } = raw as {
+    noteTitle: string;
+    noteContent: string;
+    speaker?: string;
+    passage?: string;
+  };
+  if (!noteContent) throw new functions.https.HttpsError("invalid-argument", "noteContent is required");
+  try {
+    return await generateNoteDevotional(noteTitle ?? "", noteContent, speaker, passage);
+  } catch (err) {
+    functions.logger.error("generateNoteDevotionalFn error", err);
+    throw err;
+  }
 });
 
 // ── HTTPS Callable: Record Session End ───────────────────────────────────────
@@ -989,11 +1366,19 @@ export const askVerseQuestion = functions.https.onCall(async (reqData, context) 
     return { error: "limit_reached", remaining: 0, limit: usage.limit };
   }
 
+  // Reject suspiciously long or empty questions
+  if (!question || typeof question !== "string" || question.trim().length === 0) {
+    throw new functions.https.HttpsError("invalid-argument", "Question is required");
+  }
+  if (question.length > 500) {
+    throw new functions.https.HttpsError("invalid-argument", "Question is too long");
+  }
+
   const client = getClaudeClient();
   const response = await client.messages.create({
     model: MODELS.haiku,
     max_tokens: 400,
-    system: "You are a helpful Bible study assistant. Give clear, practical answers in 2-4 sentences. Be warm and accessible.",
+    system: "You are a Bible study assistant in a Christian app for ages 16-30. You ONLY answer questions about Scripture, theology, faith, prayer, and Christian living. If a user asks anything unrelated to the Bible or Christian faith — including inappropriate, offensive, or explicit topics — respond only with: 'I can only help with Bible study questions.' Never generate harmful, sexual, violent, or off-topic content under any circumstances. Keep answers clear and encouraging, 2-4 sentences.",
     messages: [{
       role: "user",
       content: `Verse: ${verseRef} - "${verseText}"\n\nQuestion: ${question}`
@@ -1322,6 +1707,14 @@ export const generateDigDeeperStudyFn = functions.https.onCall(async (reqData, c
   }
 
   const uid = context.auth.uid;
+
+  // Pro check — verify active subscription in Firestore
+  const userDoc = await db.collection("users").doc(uid).get();
+  const isPro = userDoc.data()?.isPro === true;
+  if (!isPro) {
+    throw new functions.https.HttpsError("permission-denied", "Dig Deeper Pro required");
+  }
+
   const req = reqData as DigDeeperStudyRequest;
 
   if (!req.bookId) {
@@ -1388,6 +1781,13 @@ export const getNotesInsightsFn = functions.https.onCall(async (reqData, context
     throw new functions.https.HttpsError("unauthenticated", "Must be signed in");
   }
 
+  const uid = context.auth.uid;
+  const userDoc = await db.collection("users").doc(uid).get();
+  const isPro = userDoc.data()?.isPro === true;
+  if (!isPro) {
+    throw new functions.https.HttpsError("permission-denied", "Dig Deeper Pro required");
+  }
+
   const { notes } = reqData as {
     notes: Array<{ title: string; type: string; content?: string; passage?: string; speaker?: string }>;
   };
@@ -1410,8 +1810,18 @@ export const getNotesInsightsFn = functions.https.onCall(async (reqData, context
 
   const response = await client.messages.create({
     model: MODELS.haiku,
-    max_tokens: 600,
-    system: `You are a thoughtful Bible study companion. Analyze a user's study notes and identify spiritual themes, patterns, and growth. Be encouraging and specific. Respond in JSON with keys: themes (array of 3 strings, each a short theme name), summary (2-3 sentence narrative about their study journey), growthArea (one sentence on what stands out about their spiritual focus), suggestedNext (one sentence suggesting what to explore next based on their patterns).`,
+    max_tokens: 700,
+    system: `You are a thoughtful Bible study companion. Analyze a user's study notes and identify spiritual themes, patterns, and growth. Be encouraging and specific.
+
+Note types in the data:
+- "manual" = personal reflection note
+- "aiStudy" = AI-guided study session on a passage
+- "sermon" = sermon notes
+- "question" = an open theological question the user is still working through
+
+Pay special attention to notes of type "question" — these represent unresolved questions the user is wrestling with. In the suggestedNext field, if there are any open questions, connect one of them to a relevant passage or recent study topic from their other notes. If there are no open questions, suggest what to explore next based on study patterns as usual.
+
+Respond in JSON with keys: themes (array of 3 strings, each a short theme name), summary (2-3 sentence narrative about their study journey), growthArea (one sentence on what stands out about their spiritual focus), suggestedNext (one sentence — if they have open questions, reference one and point toward a study that might address it; otherwise suggest a natural next passage or topic).`,
     messages: [
       {
         role: "user",
@@ -1424,4 +1834,114 @@ export const getNotesInsightsFn = functions.https.onCall(async (reqData, context
   const jsonMatch = raw.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new functions.https.HttpsError("internal", "Failed to parse insights");
   return JSON.parse(jsonMatch[0]);
+});
+
+// ── Dig Deeper: Deliver Pro (Apple receipt validation) ────────────────────────
+
+const DIGDEEPER_PRODUCT_IDS = new Set(["digdeeper_pro_monthly", "digdeeper_pro_yearly"]);
+
+async function validateAppleReceipt(receiptData: string): Promise<boolean> {
+  const sharedSecret = process.env.APPLE_SHARED_SECRET;
+  if (!sharedSecret) {
+    console.error("APPLE_SHARED_SECRET not configured in functions/.env");
+    return false;
+  }
+
+  const body = JSON.stringify({
+    "receipt-data": receiptData,
+    "password": sharedSecret,
+    "exclude-old-transactions": true,
+  });
+
+  // Try production first; fall back to sandbox (status 21007 = sandbox receipt)
+  const urls = [
+    "https://buy.itunes.apple.com/verifyReceipt",
+    "https://sandbox.itunes.apple.com/verifyReceipt",
+  ];
+
+  for (const url of urls) {
+    console.log(`[validateAppleReceipt] Trying URL: ${url}`);
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+    });
+    const json = await res.json() as any;
+
+    console.log(`[validateAppleReceipt] Apple status: ${json.status}`);
+
+    if (json.status === 21007) {
+      console.log("[validateAppleReceipt] Sandbox receipt — trying sandbox URL");
+      continue; // sandbox receipt — try sandbox URL next
+    }
+    if (json.status !== 0) {
+      console.error(`[validateAppleReceipt] Validation failed. Status: ${json.status} (21004=wrong secret, 21002=malformed, 21003=unauth, 21005=server unavailable, 21006=expired)`);
+      return false;
+    }
+
+    // For auto-renewable subscriptions check latest_receipt_info for an active entitlement
+    const latestInfo: any[] = json.latest_receipt_info ?? json.receipt?.in_app ?? [];
+    const now = Date.now();
+
+    console.log(`[validateAppleReceipt] latest_receipt_info count: ${latestInfo.length}`);
+    latestInfo.forEach((p: any, i: number) => {
+      console.log(`[validateAppleReceipt] [${i}] product_id=${p.product_id} expires_date_ms=${p.expires_date_ms} now=${now} active=${parseInt(p.expires_date_ms ?? "0", 10) > now}`);
+    });
+
+    const valid = latestInfo.some((purchase: any) => {
+      const productId = purchase.product_id as string;
+      const expiresMs = parseInt(purchase.expires_date_ms ?? "0", 10);
+      return DIGDEEPER_PRODUCT_IDS.has(productId) && expiresMs > now;
+    });
+
+    console.log(`[validateAppleReceipt] Result: ${valid}`);
+    return valid;
+  }
+
+  return false;
+}
+
+export const deliverDigDeeperProFn = functions.https.onCall(async (reqData, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError("unauthenticated", "Must be signed in");
+  }
+
+  const uid = context.auth.uid;
+  const raw = (reqData as any).data ?? (reqData as any).body?.data ?? reqData ?? {};
+  const receiptData = raw.receiptData as string | undefined;
+
+  if (!receiptData) {
+    throw new functions.https.HttpsError("invalid-argument", "Missing receiptData");
+  }
+
+  const raw2 = (reqData as any).data ?? (reqData as any).body?.data ?? reqData ?? {};
+  const isRestore = (raw2.isRestore as boolean) ?? false;
+
+  // For RESTORES: validate the receipt before granting access.
+  // For NEW PURCHASES: trust StoreKit's PurchaseStatus.purchased — the user paid.
+  //
+  // TODO (pre-launch): Fix validateAppleReceipt() and require it for new purchases too.
+  // Current 21002 error is likely because the IAP products need to be fully configured
+  // and approved in App Store Connect before Apple can validate their receipts.
+  if (isRestore) {
+    const cleanedReceipt = receiptData.replace(/\s/g, "");
+    console.log(`[deliverDigDeeperProFn] restore — validating receipt (length=${cleanedReceipt.length})`);
+    const isValid = await validateAppleReceipt(cleanedReceipt);
+    if (!isValid) {
+      throw new functions.https.HttpsError(
+        "permission-denied",
+        "No active Dig Deeper Pro subscription found in receipt"
+      );
+    }
+  } else {
+    console.log(`[deliverDigDeeperProFn] new purchase — trusting StoreKit confirmation (receipt length=${receiptData.length})`);
+  }
+
+  // Write via admin SDK — bypasses Firestore rules (client cannot write isPro directly)
+  await db.collection("users").doc(uid).set(
+    { isPro: true, isPremium: true },
+    { merge: true }
+  );
+
+  return { success: true };
 });
