@@ -7,6 +7,7 @@ export interface DigDeeperStudyRequest {
   version: string;
   method: string; // 'soap' | 'inductive' | 'swedish' | 'lectioDivina' | 'wordStudy'
   passageText: string;
+  recentStudies?: Array<{ bookName: string; chapter: number; method: string }>;
 }
 
 export interface DigDeeperStudyResponse {
@@ -16,6 +17,7 @@ export interface DigDeeperStudyResponse {
   applicationPoints: string[];
   reflectionQuestions: string[];
   prayerPrompt: string;
+  commentary?: string;
 }
 
 const METHOD_INSTRUCTIONS: Record<string, string> = {
@@ -78,18 +80,28 @@ Return ONLY valid JSON with this exact structure (no markdown, no explanation):
   "interpretation": "string",
   "applicationPoints": ["string", "string", "string"],
   "reflectionQuestions": ["string", "string", "string"],
-  "prayerPrompt": "string"
-}`;
+  "prayerPrompt": "string",
+  "commentary": "string"
+}
+
+For "commentary": Write 2-3 sentences synthesizing what one or two classic Bible commentators (Calvin, Spurgeon, or Matthew Henry) said about this passage's central theme. Make it accessible and illuminating — one meaningful insight, not a quote dump. Name the commentator(s) you draw from.`;
+
+  const historyContext =
+    req.recentStudies && req.recentStudies.length > 0
+      ? `\n\nUSER'S RECENT STUDIES: ${req.recentStudies
+          .map((s) => `${s.bookName} ${s.chapter} (${s.method})`)
+          .join("; ")}. Where it fits naturally, you may draw a brief connection to their recent journey — but only if genuinely relevant.`
+      : "";
 
   const userPrompt = `PASSAGE: ${req.bookName} ${req.chapter} (${req.version.toUpperCase()})
 "${req.passageText}"
 
 STUDY METHOD: ${req.method.toUpperCase()}
-${methodInstr}`;
+${methodInstr}${historyContext}`;
 
   const response = await client.messages.create({
     model: MODELS.haiku,
-    max_tokens: 1500,
+    max_tokens: 1800,
     system: [
       {
         type: "text",
@@ -130,7 +142,8 @@ export async function askDigDeeperQuestion(
     max_tokens: 500,
     system: `You are a Bible study guide for Dig Deeper. The user is studying ${passage}.
 Passage text: "${passageText.substring(0, 800)}"
-Give clear, thoughtful answers in 2-4 sentences. Be warm, not preachy. If unsure, say so humbly.`,
+
+Answer ONLY questions related to the Bible, biblical theology, Christian faith, prayer, or the passage above. If the user asks about anything outside of these topics, politely decline and redirect them to the passage or a related biblical question. Keep answers to 2-4 sentences. Be warm, not preachy. If unsure of an answer, say so humbly.`,
     messages,
   });
 
