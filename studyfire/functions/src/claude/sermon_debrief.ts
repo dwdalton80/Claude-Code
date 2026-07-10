@@ -225,6 +225,59 @@ Application points must be:
   return JSON.parse(json) as SermonDebrief;
 }
 
+export interface NoteDevotional {
+  title: string;
+  reflection: string;
+  prayer: string;
+  actionStep: string;
+}
+
+/**
+ * "Create Devotional" — turns a sermon note into a personal devotional
+ * with a reflection, an actual written prayer, and a concrete action step.
+ */
+export async function generateNoteDevotional(
+  noteTitle: string,
+  noteContent: string,
+  speaker?: string,
+  passage?: string
+): Promise<NoteDevotional> {
+  const client = getClaudeClient();
+
+  const response = await client.messages.create({
+    model: MODELS.haiku,
+    max_tokens: 700,
+    system: `You are a devotional writer for Dig Deeper, a Bible study app for Christians aged 16-30.
+Turn sermon notes into a personal devotional — something the reader can sit with, pray through, and act on.
+Tone: warm, personal, pastoral. Speak directly to the reader (use "you", "your").
+Respond with valid JSON only. No markdown.`,
+    messages: [{
+      role: "user",
+      content: `Convert these sermon notes into a personal devotional.
+
+${noteTitle ? `Sermon: "${noteTitle}"` : ""}
+${speaker ? `Speaker: ${speaker}` : ""}
+${passage ? `Scripture: ${passage}` : ""}
+
+Notes:
+"${noteContent}"
+
+Return JSON:
+{
+  "title": "Short devotional title (5-7 words, not the sermon title)",
+  "reflection": "2-3 sentences of personal reflection applying the message to daily life",
+  "prayer": "An actual written prayer (2-3 sentences) based on the sermon — not a prompt, write the prayer itself as if the reader is praying",
+  "actionStep": "One specific, concrete thing the reader can do this week — tied directly to what was preached"
+}`,
+    }],
+  });
+
+  const raw = (response.content[0] as { type: "text"; text: string }).text.trim();
+  const start = raw.indexOf("{");
+  const end = raw.lastIndexOf("}");
+  return JSON.parse(raw.substring(start, end + 1)) as NoteDevotional;
+}
+
 /**
  * AI auto-suggests a sermon title when the note is saved without one.
  */
