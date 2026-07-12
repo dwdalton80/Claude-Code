@@ -4,6 +4,7 @@ export interface DigDeeperStudyRequest {
   bookId: string;
   bookName: string;
   chapter: number;
+  verseRef?: string;  // e.g. "John 3:16" — provided by Dig In (word study from reader)
   version: string;
   method: string; // 'soap' | 'inductive' | 'swedish' | 'lectioDivina' | 'wordStudy'
   passageText: string;
@@ -54,7 +55,7 @@ const METHOD_INSTRUCTIONS: Record<string, string> = {
 - prayerPrompt: A contemplative prayer prompt — listen as much as speak`,
 
   wordStudy: `Do an original language word study on this passage:
-- overview: 1-2 sentence introduction to what this chapter is about
+- overview: 1-2 sentence introduction to what this passage is about
 - observations: 4 KEY WORDS from the passage — for each, provide: the English word, its original Greek or Hebrew word (transliterated), its Strong's meaning, and why it matters for understanding this text. Format each as: "[English word] (Greek/Hebrew: [transliteration]) — [meaning and significance]"
 - interpretation: 1 paragraph — how do these original meanings deepen or change the way a modern reader understands this passage?
 - applicationPoints: 3 ways this richer word-level understanding changes how you live or pray
@@ -93,7 +94,10 @@ For "commentary": Write 2-3 sentences synthesizing what one or two classic Bible
           .join("; ")}. Where it fits naturally, you may draw a brief connection to their recent journey — but only if genuinely relevant.`
       : "";
 
-  const userPrompt = `PASSAGE: ${req.bookName} ${req.chapter} (${req.version.toUpperCase()})
+  // Use verse reference when available (word study from reader), otherwise chapter reference
+  const passageLabel = req.verseRef ?? `${req.bookName} ${req.chapter}`;
+
+  const userPrompt = `PASSAGE: ${passageLabel} (${req.version.toUpperCase()})
 "${req.passageText}"
 
 STUDY METHOD: ${req.method.toUpperCase()}

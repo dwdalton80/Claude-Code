@@ -1734,8 +1734,12 @@ export const generateDigDeeperStudyFn = functions.https.onCall(async (reqData, c
     throw new functions.https.HttpsError("invalid-argument", "Missing passageText");
   }
 
-  // Cache key includes version — KJV and NIV produce different content for the same passage
-  const cacheKey = `${req.bookId}_${req.chapter}_${req.method}_${req.version}`;
+  // Cache key includes version — KJV and NIV produce different content for the same passage.
+  // For word study (Dig In from reader), include verseRef so each verse gets its own cache entry.
+  const safeRef = req.verseRef
+    ? req.verseRef.replace(/[\s:]/g, "_")
+    : req.chapter.toString();
+  const cacheKey = `${req.bookId}_${safeRef}_${req.method}_${req.version}`;
   const cacheRef = db.collection("digDeeperStudyCache").doc(uid).collection("sessions").doc(cacheKey);
 
   const cached = await cacheRef.get();
