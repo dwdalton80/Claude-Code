@@ -19,7 +19,12 @@ service cloud.firestore {
     // ── Users ─────────────────────────────────────────────────────────────────
     match /users/{uid} {
       allow read: if isOwner(uid);
-      allow write: if isOwner(uid);
+      // New user docs can be created freely by the owner (no isPro on first write)
+      allow create: if isOwner(uid);
+      // Updates are allowed, but isPro/isPremium can only be set by Cloud Functions
+      // (admin SDK bypasses these rules; client SDK cannot write those fields)
+      allow update: if isOwner(uid)
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isPro', 'isPremium']);
 
       match /fcmTokens/{token} {
         allow read, write: if isOwner(uid);
@@ -203,10 +208,12 @@ service cloud.firestore {
         allow read: if isOwner(uid)
           || (isSignedIn() && resource.data.partnerId == request.auth.uid);
         allow write: if isOwner(uid);
+        // Partner joining: may only write partnerId onto the owner's doc
+        // Use path variable `uid` (the owner) rather than resource.data.ownerUid (which may not exist)
         allow update: if isSignedIn()
+          && uid != request.auth.uid
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['partnerId'])
-          && request.resource.data.partnerId == request.auth.uid
-          && resource.data.ownerUid != request.auth.uid;
+          && request.resource.data.partnerId == request.auth.uid;
       }
     }
 
@@ -233,9 +240,19 @@ service cloud.firestore {
       // Owner (first member) can create
       allow create: if isSignedIn()
         && request.auth.uid in request.resource.data.memberUids;
-      // Any member can update (mark day complete, add themselves as member)
-      allow update: if isSignedIn()
-        && request.auth.uid in resource.data.memberUids;
+      // Existing members can update freely (mark day complete, etc.)
+      // A non-member may join: only allowed when adding themselves to memberUids/memberNames
+      // and there's still room (fewer than 2 members currently)
+      allow update: if isSignedIn() && (
+        request.auth.uid in resource.data.memberUids
+        || (
+          !(request.auth.uid in resource.data.memberUids)
+          && request.auth.uid in request.resource.data.memberUids
+          && resource.data.memberUids.size() < 2
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['memberUids', 'memberNames'])
+        )
+      );
 
       match /messages/{messageId} {
         // Only members can read/write chat messages
