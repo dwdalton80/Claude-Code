@@ -1747,8 +1747,40 @@ export const generateDigDeeperStudyFn = functions.https.onCall(async (reqData, c
     const d = cached.data()!;
     const age = Date.now() - (d.cachedAt as admin.firestore.Timestamp).toMillis();
     if (age < 7 * 24 * 60 * 60 * 1000) {
-      return d.study;
+      return d.study; // Cache hit — no rate limit charge, no Claude call
     }
+  }
+
+  // Rate limit: max 80 new AI study generations per 30-day rolling window per user.
+  // Cached responses (above) are free and don't count against this limit.
+  const rateLimitRef = db.collection("users").doc(uid).collection("rateLimits").doc("studyGen");
+  const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+  try {
+    await db.runTransaction(async (tx) => {
+      const rl = await tx.get(rateLimitRef);
+      if (!rl.exists) {
+        tx.set(rateLimitRef, { count: 1, windowStart: admin.firestore.Timestamp.now() });
+        return;
+      }
+      const data = rl.data()!;
+      const windowAge = Date.now() - (data.windowStart as admin.firestore.Timestamp).toMillis();
+      if (windowAge > thirtyDaysMs) {
+        // 30-day window has elapsed — reset
+        tx.set(rateLimitRef, { count: 1, windowStart: admin.firestore.Timestamp.now() });
+        return;
+      }
+      if (data.count >= 80) {
+        throw new functions.https.HttpsError(
+          "resource-exhausted",
+          "You've reached the 80 AI study limit for this 30-day period. Your limit resets 30 days after your first study this period."
+        );
+      }
+      tx.update(rateLimitRef, { count: admin.firestore.FieldValue.increment(1) });
+    });
+  } catch (err) {
+    if (err instanceof functions.https.HttpsError) throw err;
+    functions.logger.error("Rate limit transaction error", { uid, err });
+    // Don't block the user if the rate limit check itself fails
   }
 
   let study: DigDeeperStudyResponse;
