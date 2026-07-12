@@ -2,7 +2,7 @@ import * as functions from "firebase-functions/v1";
 import * as admin from "firebase-admin";
 import { generateSparkQuestion } from "./claude/spark_questions";
 import { generateAiStudy, StudyContext } from "./claude/ai_study";
-import { generateDigDeeperStudy, askDigDeeperQuestion, DigDeeperStudyRequest } from "./claude/dig_deeper_study";
+import { generateDigDeeperStudy, askDigDeeperQuestion, DigDeeperStudyRequest, DigDeeperStudyResponse } from "./claude/dig_deeper_study";
 import { generateQuizBatch, generateWordOfDay } from "./claude/quiz_generation";
 import { generateSermonDebrief, suggestSermonTitle, generateNoteDevotional, DebriefContext } from "./claude/sermon_debrief";
 import { getClaudeClient, MODELS, StudyLevel, studyLevelInstructions } from "./claude/client";
@@ -1717,12 +1717,25 @@ export const generateDigDeeperStudyFn = functions.https.onCall(async (reqData, c
 
   const req = reqData as DigDeeperStudyRequest;
 
+  // Validate all fields used in the cache key and AI prompt
   if (!req.bookId) {
     throw new functions.https.HttpsError("invalid-argument", "Missing bookId");
   }
+  if (!req.chapter) {
+    throw new functions.https.HttpsError("invalid-argument", "Missing chapter");
+  }
+  if (!req.method) {
+    throw new functions.https.HttpsError("invalid-argument", "Missing method");
+  }
+  if (!req.version) {
+    throw new functions.https.HttpsError("invalid-argument", "Missing version");
+  }
+  if (!req.passageText) {
+    throw new functions.https.HttpsError("invalid-argument", "Missing passageText");
+  }
 
-  // Cache key: uid/bookId_chapter_method
-  const cacheKey = `${req.bookId}_${req.chapter}_${req.method}`;
+  // Cache key includes version — KJV and NIV produce different content for the same passage
+  const cacheKey = `${req.bookId}_${req.chapter}_${req.method}_${req.version}`;
   const cacheRef = db.collection("digDeeperStudyCache").doc(uid).collection("sessions").doc(cacheKey);
 
   const cached = await cacheRef.get();
@@ -1734,11 +1747,20 @@ export const generateDigDeeperStudyFn = functions.https.onCall(async (reqData, c
     }
   }
 
-  const study = await generateDigDeeperStudy(req);
+  let study: DigDeeperStudyResponse;
+  try {
+    study = await generateDigDeeperStudy(req);
+  } catch (err) {
+    functions.logger.error("generateDigDeeperStudy error", { uid, bookId: req.bookId, chapter: req.chapter, method: req.method, err });
+    throw new functions.https.HttpsError("internal", "Failed to generate study");
+  }
 
-  await cacheRef.set({
+  // Fire-and-forget cache write — don't fail the request if caching fails
+  cacheRef.set({
     study,
     cachedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }).catch((err) => {
+    functions.logger.error("Failed to cache study", { uid, cacheKey, err });
   });
 
   return study;
@@ -1914,8 +1936,7 @@ export const deliverDigDeeperProFn = functions.https.onCall(async (reqData, cont
     throw new functions.https.HttpsError("invalid-argument", "Missing receiptData");
   }
 
-  const raw2 = (reqData as any).data ?? (reqData as any).body?.data ?? reqData ?? {};
-  const isRestore = (raw2.isRestore as boolean) ?? false;
+  const isRestore = (raw.isRestore as boolean) ?? false;
 
   // Trust StoreKit for both new purchases and restores.
   // StoreKit only fires PurchaseStatus.restored for genuinely active subscriptions,
