@@ -131,23 +131,41 @@ export async function askDigDeeperQuestion(
 ): Promise<string> {
   const client = getClaudeClient();
 
-  const messages: Array<{ role: "user" | "assistant"; content: string }> = [
-    ...history
-      .slice(-6)
-      .map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
-    {
-      role: "user",
-      content: question,
-    },
+  // Static system prompt enables Anthropic prompt caching — saves ~90% on input tokens
+  // across all follow-up questions. Passage context moves to the first user message instead.
+  const staticSystem = `You are a Bible study guide for Dig Deeper.
+Answer ONLY questions related to the Bible, biblical theology, Christian faith, or prayer.
+If the user asks about anything outside these topics, politely decline and redirect to a biblical question.
+Keep answers to 2-4 sentences. Be warm, not preachy. If unsure, say so humbly.`;
+
+  // First message provides passage context; subsequent messages are the actual conversation.
+  const contextMessage = {
+    role: "user" as const,
+    content: `I'm studying ${passage}.\nPassage: "${passageText.substring(0, 800)}"`,
+  };
+  const contextAck = { role: "assistant" as const, content: "I'm ready to help you study this passage." };
+
+  const priorHistory = history
+    .slice(-4) // keep last 4 messages (down from 6) to reduce token cost
+    .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
+
+  const messages = [
+    contextMessage,
+    contextAck,
+    ...priorHistory,
+    { role: "user" as const, content: question },
   ];
 
   const response = await client.messages.create({
     model: MODELS.haiku,
     max_tokens: 500,
-    system: `You are a Bible study guide for Dig Deeper. The user is studying ${passage}.
-Passage text: "${passageText.substring(0, 800)}"
-
-Answer ONLY questions related to the Bible, biblical theology, Christian faith, prayer, or the passage above. If the user asks about anything outside of these topics, politely decline and redirect them to the passage or a related biblical question. Keep answers to 2-4 sentences. Be warm, not preachy. If unsure of an answer, say so humbly.`,
+    system: [
+      {
+        type: "text",
+        text: staticSystem,
+        cache_control: { type: "ephemeral" },
+      },
+    ],
     messages,
   });
 

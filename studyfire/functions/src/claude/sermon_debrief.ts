@@ -162,7 +162,13 @@ export async function generateSermonDebrief(ctx: DebriefContext): Promise<Sermon
   const response = await client.messages.create({
     model: MODELS.haiku,
     max_tokens: 1000,
-    system: "You are a Bible study assistant. You ALWAYS respond with valid JSON only. Never include any text outside the JSON object. Never explain or add commentary.",
+    system: [
+      {
+        type: "text",
+        text: "You are a Bible study assistant. You ALWAYS respond with valid JSON only. Never include any text outside the JSON object. Never explain or add commentary.",
+        cache_control: { type: "ephemeral" },
+      },
+    ],
     messages: [
       {
         role: "user",
@@ -247,10 +253,13 @@ export async function generateNoteDevotional(
   const response = await client.messages.create({
     model: MODELS.haiku,
     max_tokens: 700,
-    system: `You are a devotional writer for Dig Deeper, a Bible study app for Christians aged 16-30.
-Turn sermon notes into a personal devotional — something the reader can sit with, pray through, and act on.
-Tone: warm, personal, pastoral. Speak directly to the reader (use "you", "your").
-Respond with valid JSON only. No markdown.`,
+    system: [
+      {
+        type: "text",
+        text: `You are a devotional writer for Dig Deeper, a Bible study app for Christians aged 16-30.\nTurn sermon notes into a personal devotional — something the reader can sit with, pray through, and act on.\nTone: warm, personal, pastoral. Speak directly to the reader (use "you", "your").\nRespond with valid JSON only. No markdown.`,
+        cache_control: { type: "ephemeral" },
+      },
+    ],
     messages: [{
       role: "user",
       content: `Convert these sermon notes into a personal devotional.
