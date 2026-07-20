@@ -1,5 +1,8 @@
 import * as functions from "firebase-functions/v1";
 import * as admin from "firebase-admin";
+import * as fs from "fs";
+import * as path from "path";
+import { SignedDataVerifier, Environment } from "@apple/app-store-server-library";
 import { generateSparkQuestion } from "./claude/spark_questions";
 import { generateAiStudy, StudyContext } from "./claude/ai_study";
 import { generateDigDeeperStudy, askDigDeeperQuestion, DigDeeperStudyRequest, DigDeeperStudyResponse } from "./claude/dig_deeper_study";
@@ -1894,69 +1897,100 @@ Respond in JSON with keys: themes (array of 3 strings, each a short theme name),
   return JSON.parse(jsonMatch[0]);
 });
 
-// ── Dig Deeper: Deliver Pro (Apple receipt validation) ────────────────────────
+// ── Dig Deeper: Deliver Pro (StoreKit 2 JWS transaction verification) ────────
+//
+// Flutter's in_app_purchase_storekit plugin defaults to StoreKit 2 as of v0.4.x
+// on iOS 15+. That means purchase.verificationData.serverVerificationData is a
+// signed JWS transaction token, NOT the old base64 App Store receipt — so it
+// can never be validated against the legacy /verifyReceipt endpoint (that
+// always fails with status 21002, "malformed receipt-data", regardless of
+// whether the IAP products have been approved in App Store Connect).
+//
+// We verify the JWS directly using Apple's official server library, which
+// checks the signature against Apple's root CAs and decodes the transaction
+// payload (productId, expiresDate, revocationDate, etc.) without ever calling
+// out to /verifyReceipt.
 
 const DIGDEEPER_PRODUCT_IDS = new Set(["digdeeper_pro_monthly", "digdeeper_pro_yearly"]);
+const DIGDEEPER_BUNDLE_ID = "com.derekdalton.digdeeper";
+const DIGDEEPER_APPLE_ID = 6785735410; // numeric App Store ID — required for the Production verifier only
 
-async function validateAppleReceipt(receiptData: string): Promise<boolean> {
-  const sharedSecret = process.env.APPLE_SHARED_SECRET;
-  if (!sharedSecret) {
-    console.error("APPLE_SHARED_SECRET not configured in functions/.env");
-    return false;
+let _sandboxVerifier: SignedDataVerifier | undefined;
+let _productionVerifier: SignedDataVerifier | undefined;
+
+function loadAppleRootCAs(): Buffer[] {
+  // Root certs downloaded from https://www.apple.com/certificateauthority/
+  // and committed to functions/certs/ (see functions/certs/README.md).
+  const certsDir = path.join(__dirname, "..", "certs");
+  const files = fs.readdirSync(certsDir).filter((f) => f.endsWith(".cer"));
+  if (files.length === 0) {
+    throw new Error(
+      `No Apple root CA certs found in ${certsDir}. Download AppleRootCA-G3.cer ` +
+      "from https://www.apple.com/certificateauthority/ and place it there before deploying."
+    );
   }
+  return files.map((f) => fs.readFileSync(path.join(certsDir, f)));
+}
 
-  const body = JSON.stringify({
-    "receipt-data": receiptData,
-    "password": sharedSecret,
-    "exclude-old-transactions": true,
-  });
-
-  // Try production first; fall back to sandbox (status 21007 = sandbox receipt)
-  const urls = [
-    "https://buy.itunes.apple.com/verifyReceipt",
-    "https://sandbox.itunes.apple.com/verifyReceipt",
-  ];
-
-  for (const url of urls) {
-    console.log(`[validateAppleReceipt] Trying URL: ${url}`);
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body,
-    });
-    const json = await res.json() as any;
-
-    console.log(`[validateAppleReceipt] Apple status: ${json.status}`);
-
-    if (json.status === 21007) {
-      console.log("[validateAppleReceipt] Sandbox receipt — trying sandbox URL");
-      continue; // sandbox receipt — try sandbox URL next
+function getVerifier(environment: Environment): SignedDataVerifier {
+  const isProduction = environment === Environment.PRODUCTION;
+  if (isProduction) {
+    if (!_productionVerifier) {
+      _productionVerifier = new SignedDataVerifier(
+        loadAppleRootCAs(),
+        true, // enableOnlineChecks — perform Apple revocation checking
+        Environment.PRODUCTION,
+        DIGDEEPER_BUNDLE_ID,
+        DIGDEEPER_APPLE_ID
+      );
     }
-    if (json.status !== 0) {
-      console.error(`[validateAppleReceipt] Validation failed. Status: ${json.status} (21004=wrong secret, 21002=malformed, 21003=unauth, 21005=server unavailable, 21006=expired)`);
-      return false;
-    }
-
-    // For auto-renewable subscriptions check latest_receipt_info for an active entitlement
-    const latestInfo: any[] = json.latest_receipt_info ?? json.receipt?.in_app ?? [];
-    const now = Date.now();
-
-    console.log(`[validateAppleReceipt] latest_receipt_info count: ${latestInfo.length}`);
-    latestInfo.forEach((p: any, i: number) => {
-      console.log(`[validateAppleReceipt] [${i}] product_id=${p.product_id} expires_date_ms=${p.expires_date_ms} now=${now} active=${parseInt(p.expires_date_ms ?? "0", 10) > now}`);
-    });
-
-    const valid = latestInfo.some((purchase: any) => {
-      const productId = purchase.product_id as string;
-      const expiresMs = parseInt(purchase.expires_date_ms ?? "0", 10);
-      return DIGDEEPER_PRODUCT_IDS.has(productId) && expiresMs > now;
-    });
-
-    console.log(`[validateAppleReceipt] Result: ${valid}`);
-    return valid;
+    return _productionVerifier;
   }
+  if (!_sandboxVerifier) {
+    _sandboxVerifier = new SignedDataVerifier(
+      loadAppleRootCAs(),
+      true,
+      Environment.SANDBOX,
+      DIGDEEPER_BUNDLE_ID
+    );
+  }
+  return _sandboxVerifier;
+}
 
-  return false;
+interface VerifiedTransaction {
+  productId: string;
+  expiresDateMs: number;
+  revoked: boolean;
+}
+
+/**
+ * Verifies a StoreKit 2 signed transaction JWS against Apple's root certs.
+ * Tries Production first, then Sandbox (mirrors the old prod->sandbox
+ * fallback pattern from /verifyReceipt) since the same client build can hand
+ * us either depending on whether the purchase came from TestFlight/sandbox
+ * or the live App Store. Returns null if verification fails in both.
+ */
+async function verifyStoreKit2Transaction(signedTransactionInfo: string): Promise<VerifiedTransaction | null> {
+  for (const env of [Environment.PRODUCTION, Environment.SANDBOX]) {
+    try {
+      const verifier = getVerifier(env);
+      const payload = await verifier.verifyAndDecodeTransaction(signedTransactionInfo);
+      console.log(
+        `[verifyStoreKit2Transaction] verified via ${env}: productId=${payload.productId} ` +
+        `expiresDate=${payload.expiresDate} revocationDate=${payload.revocationDate}`
+      );
+      return {
+        productId: payload.productId ?? "",
+        expiresDateMs: payload.expiresDate ?? 0,
+        revoked: payload.revocationDate != null,
+      };
+    } catch (err) {
+      console.log(`[verifyStoreKit2Transaction] ${env} verification failed: ${err}`);
+      // try the other environment
+    }
+  }
+  console.error("[verifyStoreKit2Transaction] verification failed in both Production and Sandbox");
+  return null;
 }
 
 export const deliverDigDeeperProFn = functions.https.onCall(async (reqData, context) => {
@@ -1973,31 +2007,30 @@ export const deliverDigDeeperProFn = functions.https.onCall(async (reqData, cont
   }
 
   const isRestore = (raw.isRestore as boolean) ?? false;
+  console.log(`[deliverDigDeeperProFn] verifying ${isRestore ? "restore" : "new purchase"} for uid=${uid}`);
 
-  // Trust StoreKit for both new purchases and restores.
-  // StoreKit only fires PurchaseStatus.restored for genuinely active subscriptions,
-  // so we treat it as authoritative without requiring Apple receipt validation.
-  //
-  // TODO (pre-launch): Enable validateAppleReceipt() server-side validation once
-  // IAP products are fully approved in App Store Connect (fixes 21002 error).
-  // When re-enabling, call validateAppleReceipt for restores and reject if false.
-  if (isRestore) {
-    console.log(`[deliverDigDeeperProFn] restore — trusting StoreKit restore event (receipt length=${receiptData.length})`);
-    // Attempt receipt validation but don't fail if it errors — StoreKit is source of truth.
-    const cleanedReceipt = receiptData.replace(/\s/g, "");
-    try {
-      const isValid = await validateAppleReceipt(cleanedReceipt);
-      if (isValid) {
-        console.log("[deliverDigDeeperProFn] receipt validation confirmed active subscription ✓");
-      } else {
-        console.warn("[deliverDigDeeperProFn] receipt validation inconclusive (21002/misconfigured) — granting based on StoreKit restore");
-      }
-    } catch (err) {
-      console.warn("[deliverDigDeeperProFn] receipt validation threw — granting based on StoreKit restore:", err);
-    }
-  } else {
-    console.log(`[deliverDigDeeperProFn] new purchase — trusting StoreKit confirmation (receipt length=${receiptData.length})`);
+  const result = await verifyStoreKit2Transaction(receiptData.trim());
+
+  if (!result) {
+    throw new functions.https.HttpsError(
+      "permission-denied",
+      "Could not verify this purchase with Apple. Please try again, or contact support if this persists."
+    );
   }
+  if (!DIGDEEPER_PRODUCT_IDS.has(result.productId)) {
+    throw new functions.https.HttpsError("permission-denied", `Unrecognized product: ${result.productId}`);
+  }
+  if (result.revoked) {
+    throw new functions.https.HttpsError("permission-denied", "This purchase was refunded or revoked.");
+  }
+  if (result.expiresDateMs <= Date.now()) {
+    throw new functions.https.HttpsError("permission-denied", "Subscription is not active.");
+  }
+
+  console.log(
+    `[deliverDigDeeperProFn] verified ✓ uid=${uid} product=${result.productId} ` +
+    `expires=${new Date(result.expiresDateMs).toISOString()}`
+  );
 
   // Write via admin SDK — bypasses Firestore rules (client cannot write isPro directly)
   await db.collection("users").doc(uid).set(
