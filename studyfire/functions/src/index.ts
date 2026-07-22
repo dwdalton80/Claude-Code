@@ -2040,3 +2040,62 @@ export const deliverDigDeeperProFn = functions.https.onCall(async (reqData, cont
 
   return { success: true };
 });
+
+// Deletes a Dig Deeper user's account and associated data (Apple Guideline 5.1.1(v)).
+// Uses the Admin SDK so it does NOT require a freshly-reauthenticated client session —
+// the caller's verified ID token (context.auth) is sufficient authorization to delete
+// their own uid's data and Auth account.
+export const deleteDigDeeperAccountFn = functions.https.onCall(async (_reqData, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError("unauthenticated", "Must be signed in");
+  }
+  const uid = context.auth.uid;
+  console.log(`[deleteDigDeeperAccountFn] deleting account for uid=${uid}`);
+
+  // Recursively delete every top-level doc keyed by uid (doc + all subcollections)
+  const uidKeyedPaths = [
+    `users/${uid}`,
+    `digdeeperBadges/${uid}`,
+    `userPlans/${uid}`,
+    `notes/${uid}`,
+    `highlights/${uid}`,
+    `digDeeperStudyCache/${uid}`,
+  ];
+  for (const p of uidKeyedPaths) {
+    try {
+      await db.recursiveDelete(db.doc(p));
+    } catch (err) {
+      console.error(`[deleteDigDeeperAccountFn] failed to delete ${p}:`, err);
+    }
+  }
+
+  // Best-effort: drop this uid from any shared partner reading plans
+  try {
+    const partnerPlansSnap = await db.collection("partnerPlans")
+      .where("memberUids", "array-contains", uid).get();
+    for (const doc of partnerPlansSnap.docs) {
+      await doc.ref.update({
+        memberUids: admin.firestore.FieldValue.arrayRemove(uid),
+      });
+    }
+  } catch (err) {
+    console.error("[deleteDigDeeperAccountFn] failed to clean up partnerPlans:", err);
+  }
+
+  // Best-effort: remove any partner invite links this user created
+  try {
+    const partnerLinksSnap = await db.collection("partnerLinks")
+      .where("ownerUid", "==", uid).get();
+    for (const doc of partnerLinksSnap.docs) {
+      await doc.ref.delete();
+    }
+  } catch (err) {
+    console.error("[deleteDigDeeperAccountFn] failed to clean up partnerLinks:", err);
+  }
+
+  // Finally, delete the Firebase Auth account itself
+  await admin.auth().deleteUser(uid);
+
+  console.log(`[deleteDigDeeperAccountFn] deleted account for uid=${uid}`);
+  return { success: true };
+});
