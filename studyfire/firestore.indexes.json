@@ -38,6 +38,14 @@
       "fields": [
         { "fieldPath": "weeklyXp", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "users",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "isPro", "order": "ASCENDING" },
+        { "fieldPath": "subscriptionExpiresAt", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

@@ -1961,6 +1961,7 @@ interface VerifiedTransaction {
   productId: string;
   expiresDateMs: number;
   revoked: boolean;
+  originalTransactionId: string;
 }
 
 /**
@@ -1983,6 +1984,7 @@ async function verifyStoreKit2Transaction(signedTransactionInfo: string): Promis
         productId: payload.productId ?? "",
         expiresDateMs: payload.expiresDate ?? 0,
         revoked: payload.revocationDate != null,
+        originalTransactionId: payload.originalTransactionId ?? "",
       };
     } catch (err) {
       console.log(`[verifyStoreKit2Transaction] ${env} verification failed: ${err}`);
@@ -2032,14 +2034,76 @@ export const deliverDigDeeperProFn = functions.https.onCall(async (reqData, cont
     `expires=${new Date(result.expiresDateMs).toISOString()}`
   );
 
-  // Write via admin SDK — bypasses Firestore rules (client cannot write isPro directly)
+  // Write via admin SDK — bypasses Firestore rules (client cannot write isPro directly).
+  // Also store the verified transaction's expiry + identifiers so
+  // revokeExpiredDigDeeperSubscriptions can later re-check this grant without
+  // needing the client to resend receipt data. Without this, a canceled/expired
+  // subscription (including sandbox test purchases, which auto-expire after a
+  // handful of renewal cycles) stays isPro:true forever.
   await db.collection("users").doc(uid).set(
-    { isPro: true, isPremium: true },
+    {
+      isPro: true,
+      isPremium: true,
+      subscriptionProductId: result.productId,
+      subscriptionExpiresAt: admin.firestore.Timestamp.fromMillis(result.expiresDateMs),
+      subscriptionOriginalTransactionId: result.originalTransactionId || null,
+      subscriptionLastVerifiedAt: admin.firestore.FieldValue.serverTimestamp(),
+    },
     { merge: true }
   );
 
   return { success: true };
 });
+
+// Runs daily — revokes isPro/isPremium for any account whose last verified
+// subscription transaction expired more than REVOKE_GRACE_MS ago and never
+// renewed. deliverDigDeeperProFn only grants Pro; nothing else ever revoked it,
+// so a canceled subscription (or an expired sandbox/TestFlight test purchase)
+// stayed isPro:true indefinitely until someone noticed and reset it by hand.
+//
+// Only touches accounts that have a subscriptionExpiresAt field (i.e. were
+// granted through deliverDigDeeperProFn) — accounts with isPro set some other
+// way (manual Firestore edit, founder/dev account, etc.) have no such field
+// and are silently skipped by the range query below.
+//
+// Note: this is a simple expiry sweep, not a full App Store Server
+// Notifications integration — a subscriber in Apple's billing-retry/grace
+// period may still show as "expired" here until they renew or the grace
+// period elapses. REVOKE_GRACE_MS gives real subscribers a buffer before
+// being cut off; tighten this later by wiring up Server Notifications v2 if
+// billing-retry accuracy becomes important.
+const REVOKE_GRACE_MS = 3 * 24 * 60 * 60 * 1000; // 3 days past expiry
+
+export const revokeExpiredDigDeeperSubscriptions = functions.pubsub
+  .schedule("30 3 * * *")
+  .timeZone("America/Chicago")
+  .onRun(async () => {
+    const cutoff = admin.firestore.Timestamp.fromMillis(Date.now() - REVOKE_GRACE_MS);
+    const snap = await db.collection("users")
+      .where("isPro", "==", true)
+      .where("subscriptionExpiresAt", "<=", cutoff)
+      .get();
+
+    console.log(`[revokeExpiredDigDeeperSubscriptions] found ${snap.size} expired, not-renewed account(s)`);
+
+    let batch = db.batch();
+    let pending = 0;
+    let revoked = 0;
+    for (const doc of snap.docs) {
+      batch.set(doc.ref, { isPro: false, isPremium: false }, { merge: true });
+      pending++;
+      revoked++;
+      if (pending === 400) {
+        await batch.commit();
+        batch = db.batch();
+        pending = 0;
+      }
+    }
+    if (pending > 0) {
+      await batch.commit();
+    }
+    console.log(`[revokeExpiredDigDeeperSubscriptions] revoked ${revoked} account(s)`);
+  });
 
 // Deletes a Dig Deeper user's account and associated data (Apple Guideline 5.1.1(v)).
 // Uses the Admin SDK so it does NOT require a freshly-reauthenticated client session —
