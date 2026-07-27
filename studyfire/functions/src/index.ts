@@ -2,7 +2,7 @@ import * as functions from "firebase-functions/v1";
 import * as admin from "firebase-admin";
 import * as fs from "fs";
 import * as path from "path";
-import { SignedDataVerifier, Environment } from "@apple/app-store-server-library";
+import { SignedDataVerifier, Environment, Status } from "@apple/app-store-server-library";
 import { generateSparkQuestion } from "./claude/spark_questions";
 import { generateAiStudy, StudyContext } from "./claude/ai_study";
 import { generateDigDeeperStudy, askDigDeeperQuestion, DigDeeperStudyRequest, DigDeeperStudyResponse } from "./claude/dig_deeper_study";
@@ -2104,6 +2104,125 @@ export const revokeExpiredDigDeeperSubscriptions = functions.pubsub
     }
     console.log(`[revokeExpiredDigDeeperSubscriptions] revoked ${revoked} account(s)`);
   });
+
+// Public webhook — Apple posts here in real time on every subscription lifecycle event
+// (renewal, expiration, cancellation, refund, billing retry/grace period, etc.). This is
+// what makes revocation instant instead of waiting for the daily
+// revokeExpiredDigDeeperSubscriptions sweep; that sweep stays in place as a backstop in
+// case a notification is ever missed or retries are exhausted.
+//
+// No auth on this endpoint by design — Apple calls it directly and identifies itself via
+// the signed JWS payload, which we verify against Apple's root certs before trusting anything
+// in it. Register this function's URL as both the Production and Sandbox "App Store Server
+// Notifications" (V2) URL for this app in App Store Connect → App Information.
+export const appStoreServerNotifications = functions.https.onRequest(async (req, res) => {
+  if (req.method !== "POST") {
+    res.status(405).send("Method Not Allowed");
+    return;
+  }
+
+  const signedPayload = req.body?.signedPayload as string | undefined;
+  if (!signedPayload) {
+    console.error("[appStoreServerNotifications] missing signedPayload in request body");
+    res.status(400).send("Missing signedPayload");
+    return;
+  }
+
+  // Apple sends both real and sandbox-environment notifications to the same URL —
+  // try Production first, then Sandbox, same fallback pattern as purchase verification.
+  let decoded;
+  try {
+    decoded = await getVerifier(Environment.PRODUCTION).verifyAndDecodeNotification(signedPayload);
+  } catch {
+    try {
+      decoded = await getVerifier(Environment.SANDBOX).verifyAndDecodeNotification(signedPayload);
+    } catch (err) {
+      console.error("[appStoreServerNotifications] signature verification failed in both environments:", err);
+      // 400 so Apple doesn't keep retrying a payload that will never verify.
+      res.status(400).send("Invalid signature");
+      return;
+    }
+  }
+
+  console.log(
+    `[appStoreServerNotifications] type=${decoded.notificationType} subtype=${decoded.subtype} ` +
+    `uuid=${decoded.notificationUUID}`
+  );
+
+  // Apple's "Send Test Notification" button in App Store Connect sends this with no
+  // meaningful data field — just acknowledge it so the test shows as delivered.
+  if (decoded.notificationType === "TEST") {
+    res.status(200).send("OK");
+    return;
+  }
+
+  const signedTransactionInfo = decoded.data?.signedTransactionInfo;
+  if (!signedTransactionInfo) {
+    // Notification types like CONSUMPTION_REQUEST, EXTERNAL_PURCHASE_TOKEN, etc. don't carry
+    // subscription transaction data — nothing for us to act on.
+    res.status(200).send("OK");
+    return;
+  }
+
+  let transaction;
+  try {
+    const env = decoded.data?.environment === "Production" ? Environment.PRODUCTION : Environment.SANDBOX;
+    transaction = await getVerifier(env).verifyAndDecodeTransaction(signedTransactionInfo);
+  } catch (err) {
+    console.error("[appStoreServerNotifications] failed to decode signedTransactionInfo:", err);
+    res.status(200).send("OK"); // ack — retrying won't fix a payload we can't parse
+    return;
+  }
+
+  if (!DIGDEEPER_PRODUCT_IDS.has(transaction.productId ?? "")) {
+    // Not one of ours (shouldn't happen given the bundle-scoped verifier, but be safe).
+    res.status(200).send("OK");
+    return;
+  }
+
+  const originalTransactionId = transaction.originalTransactionId;
+  if (!originalTransactionId) {
+    res.status(200).send("OK");
+    return;
+  }
+
+  // ACTIVE and BILLING_GRACE_PERIOD retain access (Apple's own guidance: keep serving
+  // premium during grace period so a temporary card failure doesn't immediately lock out a
+  // paying subscriber). EXPIRED, BILLING_RETRY (past grace), and REVOKED do not.
+  const status = decoded.data?.status;
+  const isActive = status === Status.ACTIVE || status === Status.BILLING_GRACE_PERIOD;
+
+  const snap = await db.collection("users")
+    .where("subscriptionOriginalTransactionId", "==", originalTransactionId)
+    .limit(1)
+    .get();
+
+  if (snap.empty) {
+    console.log(`[appStoreServerNotifications] no matching user for originalTransactionId=${originalTransactionId}`);
+    res.status(200).send("OK");
+    return;
+  }
+
+  const userRef = snap.docs[0].ref;
+  await userRef.set(
+    {
+      isPro: isActive,
+      isPremium: isActive,
+      subscriptionExpiresAt: admin.firestore.Timestamp.fromMillis(transaction.expiresDate ?? 0),
+      subscriptionProductId: transaction.productId,
+      subscriptionLastVerifiedAt: admin.firestore.FieldValue.serverTimestamp(),
+      subscriptionLastNotificationType: decoded.notificationType ?? null,
+    },
+    { merge: true }
+  );
+
+  console.log(
+    `[appStoreServerNotifications] uid=${snap.docs[0].id} type=${decoded.notificationType} ` +
+    `status=${status} → isPro=${isActive}`
+  );
+
+  res.status(200).send("OK");
+});
 
 // Deletes a Dig Deeper user's account and associated data (Apple Guideline 5.1.1(v)).
 // Uses the Admin SDK so it does NOT require a freshly-reauthenticated client session —
